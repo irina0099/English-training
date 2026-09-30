@@ -147,7 +147,7 @@ export function Mistakes() {
         </details>
       )}
 
-      <ConfirmButton class="btn btn-ghost btn-sm" label="Очистить журнал ошибок" confirmLabel="Очистить журнал" onConfirm={clearMistakes} />
+      <ConfirmButton class="btn btn-danger btn-block" label="Очистить журнал ошибок" confirmLabel="Очистить журнал" onConfirm={clearMistakes} />
     </div>
   );
 }

@@ -1,12 +1,13 @@
 import { BUILTIN } from '../content';
+import type { CloudStatus } from '../engine/cloud';
 import { isFixed, mistakesByItem } from '../engine/mistakes';
 import { dueCount, newLeftToday, progressOf, streak, todayKey, unseenCount } from '../engine/store';
-import type { CloudStatus } from '../engine/cloud';
 import type { Level } from '../types';
-import { plural } from './common';
+import { plural, Row } from './common';
 import { useNav } from './context';
 import { useData } from './hooks';
-import { IconCards, IconGear, IconGrid, IconShuffle } from './icons';
+import { IconBook, IconCards, IconGear, IconGrid, IconPen, IconShuffle } from './icons';
+import { Rings } from './Rings';
 
 export function Home({ cloud }: { cloud: CloudStatus }) {
   const d = useData();
@@ -14,67 +15,75 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
   const now = Date.now();
   const due = dueCount(d, now);
   const newLeft = Math.min(newLeftToday(d, now), unseenCount(d));
-  const today = d.days[todayKey(now)];
+  const today = d.days[todayKey(now)] ?? { n: 0, ok: 0, new: 0 };
   const days = streak(d, now);
-  const byItem = mistakesByItem(d.mistakes, now);
-  const openMistakes = [...byItem.keys()].filter((id) => !isFixed(d.states[id])).length;
+  const openMistakes = [...mistakesByItem(d.mistakes, now).keys()].filter((id) => !isFixed(d.states[id])).length;
   const levels: (Level | 'own')[] = [...d.settings.levels, ...(d.custom.length ? (['own'] as const) : [])];
+  const date = new Date(now).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+  const goal = d.settings.sessionSize;
 
   return (
     <div class="page">
       <div class="page-head">
         <div class="stack-sm">
-          <h1 class="title">Английская тетрадь</h1>
-          <p class="subtitle">
-            Уровень {d.settings.levels.join(' + ')} · {cloud === 'synced' ? 'прогресс в вашем аккаунте' : 'прогресс в этом браузере'}
-          </p>
+          <p class="eyebrow">{date}</p>
+          <h1 class="title">Сегодня</h1>
         </div>
         <button type="button" class="icon-btn" onClick={() => nav.go('settings')} aria-label="Настройки">
           <IconGear size={20} />
         </button>
       </div>
 
-      <section class="sheet stack" aria-labelledby="today">
-        <p class="section-title" id="today">
-          Сегодня
-        </p>
-        <div class="hero">
-          <div class="stat">
+      <section class="sheet today" aria-label="Итоги дня">
+        <Rings
+          rings={[
+            { label: 'Ответы', value: today.n / goal, text: `${today.n}/${goal}`, color: 'var(--ring-1)' },
+            { label: 'Новые', value: today.new / d.settings.newPerDay, text: `${today.new}/${d.settings.newPerDay}`, color: 'var(--ring-2)' },
+            { label: 'Точность', value: today.n ? today.ok / today.n : 0, text: today.n ? `${Math.round((today.ok / today.n) * 100)}%` : '—', color: 'var(--ring-3)' },
+          ]}
+        />
+        <div class="facts">
+          <div>
             <b>{due}</b>
-            <span>{plural(due, 'повторение', 'повторения', 'повторений')}</span>
+            <span>к повторению</span>
           </div>
-          <div class="stat">
+          <div>
             <b>{newLeft}</b>
             <span>{plural(newLeft, 'новое', 'новых', 'новых')} в запасе</span>
           </div>
-          <div class="stat">
+          <div>
             <b>{days}</b>
             <span>{plural(days, 'день', 'дня', 'дней')} подряд</span>
           </div>
         </div>
-        {today && (
-          <p class="muted small">
-            Сегодня {today.n} {plural(today.n, 'ответ', 'ответа', 'ответов')}, верных {today.ok}.
-          </p>
-        )}
         <button type="button" class="btn btn-primary btn-block" onClick={() => nav.startSession({ kind: 'daily' })}>
-          {due + newLeft > 0 ? 'Начать тренировку' : 'Всё сделано — потренироваться ещё'}
+          {due + newLeft > 0 ? 'Начать тренировку' : 'Потренироваться ещё'}
         </button>
-        <div class="row">
-          <button type="button" class="btn" style={{ flex: 1 }} onClick={() => nav.startSession({ kind: 'mistakes' })} disabled={openMistakes === 0}>
-            Работа над ошибками{openMistakes ? ` · ${openMistakes}` : ''}
-          </button>
-          <button type="button" class="btn" style={{ flex: 1 }} onClick={() => (d.custom.length ? nav.startSession({ kind: 'custom' }) : nav.go('words'))}>
-            {d.custom.length ? `Мои слова · ${d.custom.length}` : 'Добавить свои слова'}
-          </button>
-        </div>
       </section>
 
-      <section class="stack" aria-labelledby="progress">
+      <div class="list with-icons">
+        <Row
+          icon={<IconPen size={18} />}
+          color="var(--red)"
+          title="Работа над ошибками"
+          value={openMistakes || 'нет'}
+          disabled={openMistakes === 0}
+          onClick={() => nav.startSession({ kind: 'mistakes' })}
+        />
+        <Row
+          icon={<IconBook size={18} />}
+          color="var(--orange)"
+          title={d.custom.length ? 'Мои слова' : 'Добавить свои слова'}
+          value={d.custom.length || undefined}
+          onClick={() => (d.custom.length ? nav.startSession({ kind: 'custom' }) : nav.go('words'))}
+        />
+      </div>
+
+      <section class="section" aria-labelledby="progress">
         <p class="section-title" id="progress">
           Прогресс
         </p>
-        <div class="sheet stack">
+        <div class="list">
           {levels.map((lvl) => {
             const items = lvl === 'own' ? d.custom : BUILTIN.filter((i) => i.level === lvl);
             const p = progressOf(items, d.states);
@@ -82,10 +91,10 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
             const started = p.total ? ((p.started - p.known) / p.total) * 100 : 0;
             return (
               <div class="progress-row" key={lvl}>
-                <span class={`chip ${lvl === 'B2' ? 'chip-b2' : lvl === 'own' ? 'chip-own' : ''}`}>{lvl === 'own' ? 'МОИ' : lvl}</span>
+                <span class={`chip ${lvl === 'B2' ? 'chip-b2' : lvl === 'own' ? 'chip-own' : ''}`}>{lvl === 'own' ? 'Мои' : lvl}</span>
                 <div class="bar" role="img" aria-label={`Знаю ${p.known} из ${p.total}, изучаю ${p.started - p.known}`}>
-                  <i class="known" style={{ width: `${known}%` }} />
-                  <i class="started" style={{ width: `${started}%` }} />
+                  {known > 0 && <i class="known" style={{ width: `${known}%` }} />}
+                  {started > 0 && <i class="started" style={{ width: `${started}%` }} />}
                 </div>
                 <span class="small muted">
                   {p.known}/{p.total}
@@ -93,42 +102,21 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
               </div>
             );
           })}
-          <p class="muted small">Зелёным — то, что вы уверенно помните (повторение не раньше чем через неделю), жёлтым — то, что изучаете.</p>
         </div>
+        <p class="footnote">
+          Зелёное — помните уверенно (повторение не раньше чем через неделю), оранжевое — изучаете.{' '}
+          {cloud === 'synced' ? 'Прогресс хранится в вашем аккаунте.' : 'Прогресс хранится в этом браузере.'}
+        </p>
       </section>
 
-      <section class="stack" aria-labelledby="games">
+      <section class="section" aria-labelledby="games">
         <p class="section-title" id="games">
           Игры со словами
         </p>
-        <div class="tiles">
-          <button type="button" class="tile" onClick={() => nav.go('games', 'filword')}>
-            <span class="tile-icon">
-              <IconGrid />
-            </span>
-            <span class="tile-text">
-              <span class="tile-title">Филворд</span>
-              <span class="muted small">Найдите слова, спрятанные змейкой</span>
-            </span>
-          </button>
-          <button type="button" class="tile" onClick={() => nav.go('games', 'anagram')}>
-            <span class="tile-icon">
-              <IconShuffle />
-            </span>
-            <span class="tile-text">
-              <span class="tile-title">Анаграммы</span>
-              <span class="muted small">Соберите слово из букв</span>
-            </span>
-          </button>
-          <button type="button" class="tile" onClick={() => nav.go('games', 'pairs')}>
-            <span class="tile-icon">
-              <IconCards />
-            </span>
-            <span class="tile-text">
-              <span class="tile-title">Пары</span>
-              <span class="muted small">Соедините слово и перевод на время</span>
-            </span>
-          </button>
+        <div class="list with-icons">
+          <Row icon={<IconGrid size={18} />} color="var(--blue)" title="Филворд" subtitle="Слова, спрятанные змейкой" onClick={() => nav.go('games', 'filword')} />
+          <Row icon={<IconShuffle size={18} />} color="var(--purple)" title="Анаграммы" subtitle="Слово из перепутанных букв" onClick={() => nav.go('games', 'anagram')} />
+          <Row icon={<IconCards size={18} />} color="var(--green)" title="Пары" subtitle="Слово и перевод на время" onClick={() => nav.go('games', 'pairs')} />
         </div>
       </section>
     </div>

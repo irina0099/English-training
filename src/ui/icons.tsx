@@ -88,3 +88,42 @@ export const IconCards = (p: Props) => (
     <path d="M8 4h11a2 2 0 0 1 2 2v12" />
   </Svg>
 );
+
+export const IconChevron = (p: Props) => (
+  <Svg size={14} stroke-width="2.4" {...p}>
+    <path d="M9 5l7 7-7 7" />
+  </Svg>
+);
+
+export const IconCheck = (p: Props) => (
+  <Svg stroke-width="2.4" {...p}>
+    <path d="M5 12.5l4.5 4.5L19 7.5" />
+  </Svg>
+);
+
+export const IconCheckCircle = (p: Props) => (
+  <svg width={p.size ?? 22} height={p.size ?? 22} viewBox="0 0 24 24" aria-hidden="true" class={p.class as string}>
+    <circle cx="12" cy="12" r="11" fill="currentColor" />
+    <path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+);
+
+export const IconXCircle = (p: Props) => (
+  <svg width={p.size ?? 22} height={p.size ?? 22} viewBox="0 0 24 24" aria-hidden="true" class={p.class as string}>
+    <circle cx="12" cy="12" r="11" fill="currentColor" />
+    <path d="M8.5 8.5l7 7M15.5 8.5l-7 7" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" />
+  </svg>
+);
+
+export const IconSearch = (p: Props) => (
+  <Svg size={18} stroke-width="2.2" {...p}>
+    <circle cx="10.5" cy="10.5" r="6.5" />
+    <path d="M15.5 15.5 20 20" />
+  </Svg>
+);
+
+export const IconFlame = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 21c-3.9 0-7-2.7-7-6.5 0-3.3 2.4-5.4 3.6-7.4.3 1.6 1.1 2.7 2.2 3.3C11 7 12.3 4.5 14.5 3c-.3 3 1.6 4.8 2.9 6.6A7.4 7.4 0 0 1 19 14.5C19 18.3 15.9 21 12 21z" />
+  </Svg>
+);

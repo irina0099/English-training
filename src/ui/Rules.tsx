@@ -5,6 +5,7 @@ import type { Level, Rule } from '../types';
 import { plural } from './common';
 import { useNav } from './context';
 import { useData } from './hooks';
+import { IconChevron, IconRule } from './icons';
 
 export function RuleBody({ rule }: { rule: Rule }) {
   const nav = useNav();
@@ -12,6 +13,7 @@ export function RuleBody({ rule }: { rule: Rule }) {
   return (
     <div class="stack">
       <div class="rule-note">
+        <IconRule size={22} />
         <h4>Коротко</h4>
         <p>{rule.summary}</p>
       </div>
@@ -62,12 +64,13 @@ export function Rules() {
             <button type="button" class="list-item" key={r.id} onClick={() => nav.openRule(r.id)} style={{ alignItems: 'flex-start' }}>
               <span class="list-item-main">
                 <b>{r.title}</b>
-                <span>{r.summary}</span>
+                <span class="clamp">{r.summary}</span>
               </span>
               <span class="stack-sm" style={{ alignItems: 'flex-end' }}>
                 <span class={`chip ${r.level === 'B2' ? 'chip-b2' : ''}`}>{r.level}</span>
                 {count > 0 && <span class="chip chip-red">×{count}</span>}
               </span>
+              <IconChevron class="chevron" style={{ alignSelf: 'center' }} />
             </button>
           );
         })}

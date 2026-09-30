@@ -8,7 +8,7 @@ import type { Level, VocabItem } from '../types';
 import { ConfirmButton, dueLabel, LevelChip, Modal, plural, StageDot, WordCard } from './common';
 import { useNav } from './context';
 import { useData } from './hooks';
-import { IconPlus } from './icons';
+import { IconChevron, IconPlus, IconSearch } from './icons';
 
 type Filter = 'all' | 'B1' | 'B2' | 'phrases' | 'own' | 'hard';
 
@@ -65,22 +65,25 @@ export function Dictionary() {
             Слов и фраз B1–B2: {VOCAB.length} · своих: {d.custom.length}
           </p>
         </div>
-        <button type="button" class="btn btn-primary btn-sm" onClick={() => setEditing('new')}>
-          <IconPlus size={18} /> Добавить
+        <button type="button" class="icon-btn" onClick={() => setEditing('new')} aria-label="Новое слово" title="Новое слово">
+          <IconPlus size={22} />
         </button>
       </div>
 
-      <div class="segmented" role="group" aria-label="Фильтр">
+      <label class="search">
+        <IconSearch />
+        <input type="search" placeholder="Поиск" value={query} onInput={(e) => setQuery(e.currentTarget.value)} aria-label="Поиск по-английски или по-русски" />
+      </label>
+      <div class="chips" role="group" aria-label="Фильтр">
         {FILTERS.map(([id, label]) => (
           <button type="button" key={id} aria-pressed={filter === id} onClick={() => setFilter(id)}>
             {label}
           </button>
         ))}
       </div>
-      <input class="search" type="search" placeholder="Поиск по-английски или по-русски" value={query} onInput={(e) => setQuery(e.currentTarget.value)} aria-label="Поиск" />
 
       {filter === 'own' && d.custom.length > 0 && (
-        <button type="button" class="btn btn-block" onClick={() => nav.startSession({ kind: 'custom' })}>
+        <button type="button" class="btn btn-primary btn-block" onClick={() => nav.startSession({ kind: 'custom' })}>
           Тренировать мои слова
         </button>
       )}
@@ -116,6 +119,7 @@ export function Dictionary() {
                   </span>
                   {m && <span class="chip chip-red">×{m.count}</span>}
                   <LevelChip item={w} />
+                  <IconChevron class="chevron" />
                 </button>
                 {isOpen && (
                   <div class="detail">

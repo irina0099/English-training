@@ -5,23 +5,26 @@ import type { AppData, VocabItem } from '../types';
 import { Anagram } from './Anagram';
 import { useData } from './hooks';
 import { Filword } from './Filword';
-import { IconBack, IconCards, IconGrid, IconShuffle } from './icons';
+import { BackButton, Row } from './common';
+import { IconCards, IconGrid, IconShuffle } from './icons';
 import { Pairs } from './Pairs';
 
 export type GameId = 'filword' | 'anagram' | 'pairs';
 export type PoolId = 'B1' | 'B2' | 'own' | 'hard';
 
 const POOLS: [PoolId, string][] = [
-  ['B1', 'Слова B1'],
-  ['B2', 'Слова B2'],
-  ['own', 'Мои слова'],
-  ['hard', 'Сложные для меня'],
+  ['B1', 'B1'],
+  ['B2', 'B2'],
+  ['own', 'Мои'],
+  ['hard', 'Сложные'],
 ];
 
-const GAMES: { id: GameId; title: string; text: string; icon: preact.ComponentChildren }[] = [
-  { id: 'filword', title: 'Филворд', text: 'Все буквы сетки заняты словами, которые идут змейкой. Найдите английские слова по русским подсказкам.', icon: <IconGrid /> },
-  { id: 'anagram', title: 'Анаграммы', text: 'Буквы перепутаны. Соберите слово по переводу — тренирует написание.', icon: <IconShuffle /> },
-  { id: 'pairs', title: 'Пары', text: 'Соедините слово с переводом как можно быстрее и без ошибок.', icon: <IconCards /> },
+const POOL_TITLE: Record<PoolId, string> = { B1: 'Слова B1', B2: 'Слова B2', own: 'Мои слова', hard: 'Сложные для меня' };
+
+const GAMES: { id: GameId; title: string; text: string; icon: preact.ComponentChildren; color: string }[] = [
+  { id: 'filword', title: 'Филворд', text: 'Слова идут змейкой и занимают всю сетку. Ищите их по переводу.', icon: <IconGrid size={18} />, color: 'var(--blue)' },
+  { id: 'anagram', title: 'Анаграммы', text: 'Соберите слово из перепутанных букв — тренирует написание.', icon: <IconShuffle size={18} />, color: 'var(--purple)' },
+  { id: 'pairs', title: 'Пары', text: 'Соедините слово с переводом быстро и без ошибок.', icon: <IconCards size={18} />, color: 'var(--green)' },
 ];
 
 /** Single words (not phrases) from the chosen pool. */
@@ -41,7 +44,7 @@ export function poolWords(d: AppData, pool: PoolId): VocabItem[] {
 }
 
 export function poolLabel(pool: PoolId): string {
-  return POOLS.find(([id]) => id === pool)![1];
+  return POOL_TITLE[pool];
 }
 
 export function Games({ initial }: { initial: GameId | null }) {
@@ -55,14 +58,10 @@ export function Games({ initial }: { initial: GameId | null }) {
     const meta = GAMES.find((g) => g.id === game)!;
     return (
       <div class="page">
-        <div class="page-head">
-          <button type="button" class="icon-btn" onClick={() => setGame(null)} aria-label="К списку игр">
-            <IconBack size={20} />
-          </button>
-          <div class="stack-sm" style={{ flex: 1, minWidth: 0 }}>
-            <h1 class="title">{meta.title}</h1>
-            <p class="subtitle">{poolLabel(pool)}</p>
-          </div>
+        <div class="stack-sm">
+          <BackButton label="Игры" onClick={() => setGame(null)} />
+          <h1 class="title">{meta.title}</h1>
+          <p class="subtitle">{poolLabel(pool)}</p>
         </div>
         {game === 'filword' && <Filword words={words} fallback={fallback} pool={pool} />}
         {game === 'anagram' && <Anagram words={words} fallback={fallback} pool={pool} />}
@@ -77,7 +76,7 @@ export function Games({ initial }: { initial: GameId | null }) {
         <h1 class="title">Игры</h1>
         <p class="subtitle">Лёгкий способ повторить слова. На расписание повторений игры не влияют.</p>
       </div>
-      <div class="stack-sm">
+      <div class="section">
         <p class="section-title">Какие слова</p>
         <div class="segmented" role="group" aria-label="Набор слов">
           {POOLS.map(([id, label]) => (
@@ -86,7 +85,7 @@ export function Games({ initial }: { initial: GameId | null }) {
             </button>
           ))}
         </div>
-        <p class="muted small">
+        <p class="footnote">
           {words.length
             ? `В наборе ${words.length} слов.`
             : pool === 'own'
@@ -94,15 +93,9 @@ export function Games({ initial }: { initial: GameId | null }) {
               : 'Сложных слов пока нет: сюда попадают слова, в которых вы ошибались. Пока игры возьмут слова вашего уровня.'}
         </p>
       </div>
-      <div class="stack">
+      <div class="list with-icons">
         {GAMES.map((g) => (
-          <button type="button" class="tile" key={g.id} onClick={() => setGame(g.id)}>
-            <span class="row">
-              <span class="tile-icon">{g.icon}</span>
-              <span class="tile-title">{g.title}</span>
-            </span>
-            <span class="muted small">{g.text}</span>
-          </button>
+          <Row key={g.id} icon={g.icon} color={g.color} title={g.title} subtitle={g.text} onClick={() => setGame(g.id)} />
         ))}
       </div>
     </div>

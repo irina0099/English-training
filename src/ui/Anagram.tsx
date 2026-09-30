@@ -159,7 +159,7 @@ function Puzzle({ item, letters, position, onDone }: { item: VocabItem; letters:
           </button>
         ))}
       </div>
-      <div class="letters" hidden={state !== 'play'}>
+      <div class="letters key-tray" hidden={state !== 'play'}>
         {letters.map((ch, i) => (
           <button type="button" key={i} class={`letter ${chosen.includes(i) ? 'used' : ''}`} onClick={() => add(i)} disabled={state !== 'play'}>
             {ch}

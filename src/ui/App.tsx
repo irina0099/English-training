@@ -16,7 +16,7 @@ import { Session } from './Session';
 import { Settings } from './Settings';
 
 const TABS: [Tab, string, typeof IconHome][] = [
-  ['home', 'Главная', IconHome],
+  ['home', 'Сегодня', IconHome],
   ['words', 'Словарь', IconBook],
   ['games', 'Игры', IconGrid],
   ['mistakes', 'Ошибки', IconPen],

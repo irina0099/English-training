@@ -5,7 +5,7 @@ import { stage } from '../engine/fsrs';
 import { canSpeak, speak } from '../tts';
 import type { CardState, Item, VocabItem } from '../types';
 import { useNav } from './context';
-import { IconClose, IconSpeaker } from './icons';
+import { IconChevron, IconRule, IconSpeaker } from './icons';
 
 /** Renders an example sentence, highlighting the *marked* target words. */
 export function Example({ text, ru }: { text: string; ru?: string }) {
@@ -53,6 +53,7 @@ export function RuleNote({ ruleId, heading = 'Почему так' }: { ruleId: 
   if (!rule) return null;
   return (
     <div class="rule-note">
+      <IconRule size={22} />
       <h4>
         {heading}: {rule.title}
       </h4>
@@ -95,6 +96,7 @@ export function WordCard({ item, compact = false }: { item: VocabItem; compact?:
   );
 }
 
+/** iOS-style sheet: grabber, centred title, "Готово" on the right. */
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ComponentChildren }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -104,17 +106,62 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   return (
     <div class="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div class="modal" role="dialog" aria-modal="true" aria-label={title}>
-        <div class="page-head">
-          <h2 class="title" style={{ fontSize: '1.2rem' }}>
-            {title}
-          </h2>
-          <button type="button" class="icon-btn" onClick={onClose} aria-label="Закрыть">
-            <IconClose size={20} />
+        <div class="modal-head">
+          <span class="grabber" aria-hidden="true" />
+          <h2>{title}</h2>
+          <button type="button" class="nav-btn" onClick={onClose}>
+            Готово
           </button>
         </div>
         {children}
       </div>
     </div>
+  );
+}
+
+/** A row of an inset grouped list, like in iOS Settings. */
+export function Row({
+  title,
+  subtitle,
+  value,
+  icon,
+  color,
+  onClick,
+  disabled,
+  chevron = true,
+}: {
+  title: ComponentChildren;
+  subtitle?: ComponentChildren;
+  value?: ComponentChildren;
+  icon?: ComponentChildren;
+  color?: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  chevron?: boolean;
+}) {
+  return (
+    <button type="button" class="list-item" onClick={onClick} disabled={disabled}>
+      {icon && (
+        <span class="app-icon" style={{ '--c': color } as Record<string, string>}>
+          {icon}
+        </span>
+      )}
+      <span class="list-item-main">
+        <b>{title}</b>
+        {subtitle && <span>{subtitle}</span>}
+      </span>
+      {value !== undefined && <span class="value">{value}</span>}
+      {chevron && !disabled && <IconChevron class="chevron" />}
+    </button>
+  );
+}
+
+export function BackButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" class="nav-back" onClick={onClick}>
+      <IconChevron size={20} style={{ transform: 'rotate(180deg)' }} />
+      {label}
+    </button>
   );
 }
 

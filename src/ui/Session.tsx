@@ -18,7 +18,7 @@ import { speak } from '../tts';
 import type { Drill, Item, Verdict } from '../types';
 import { Example, LevelChip, plural, RuleNote, SpeakButton, WordCard } from './common';
 import { useNav } from './context';
-import { IconClose } from './icons';
+import { IconCheckCircle, IconXCircle } from './icons';
 
 interface Answered {
   verdict: Verdict;
@@ -128,19 +128,19 @@ export function Session({ mode, onClose }: { mode: SessionMode; onClose: () => v
 
   return (
     <div class="session" role="dialog" aria-label={MODE_TITLE[mode.kind]}>
-      <div class="session-inner">
+      <div class="session-bar">
         <div class="session-top">
-          <button type="button" class="icon-btn" onClick={onClose} aria-label="Закончить тренировку">
-            <IconClose size={20} />
+          <button type="button" class="nav-btn" style={{ justifySelf: 'start' }} onClick={onClose}>
+            Закрыть
           </button>
-          <div class="session-progress" aria-hidden="true">
-            <i style={{ width: `${progress}%` }} />
-          </div>
-          <span class="counter">
-            {Math.min(index + 1, tasks.length)}/{tasks.length}
-          </span>
+          <span class="counter">{tasks.length ? `${Math.min(index + 1, tasks.length)} из ${tasks.length}` : MODE_TITLE[mode.kind]}</span>
+          <span />
         </div>
-
+        <div class="session-progress" aria-hidden="true">
+          <i style={{ width: `${progress}%` }} />
+        </div>
+      </div>
+      <div class="session-inner">
         {tasks.length === 0 ? (
           <NothingToDo mode={mode} onClose={onClose} onMoreNew={moreNew} />
         ) : finished ? (
@@ -442,6 +442,8 @@ function Options({ options, answer, answered, onPick }: { options: string[]; ans
           <button type="button" key={opt} class={`option ${cls}`} disabled={Boolean(answered)} onClick={() => onPick(opt)}>
             <kbd>{i + 1}</kbd>
             <span>{opt}</span>
+            {cls === 'is-right' && <IconCheckCircle class="mark-icon" />}
+            {cls === 'is-wrong' && <IconXCircle class="mark-icon" />}
           </button>
         );
       })}
@@ -511,7 +513,7 @@ function BuildPhrase({ tiles, answered, onSubmit }: { tiles: string[]; answered:
           </button>
         ))}
       </div>
-      <div class="row">
+      <div class="row key-tray" style={{ justifyContent: 'center' }}>
         {tiles.map((t, i) => (
           <button type="button" key={i} class={`word-tile ${chosen.includes(i) ? 'used' : ''}`} disabled={Boolean(answered) || chosen.includes(i)} onClick={() => setChosen((c) => [...c, i])}>
             {t}
@@ -534,6 +536,7 @@ function Feedback({ ex, answered, onNext, onAccept }: { ex: Exercise; answered: 
   return (
     <div class={`sheet feedback ${verdict === 'wrong' ? 'is-wrong' : verdict === 'typo' ? 'is-typo' : ''}`} aria-live="polite">
       <p class={`verdict ${verdict}`}>
+        {verdict === 'wrong' ? <IconXCircle size={26} /> : <IconCheckCircle size={26} />}
         {answered.accepted ? 'Засчитано' : verdict === 'ok' ? praise : verdict === 'typo' ? 'Почти! Проверьте написание' : 'Ошибка'}
       </p>
       {verdict !== 'ok' && (

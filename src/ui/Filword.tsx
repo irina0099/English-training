@@ -212,8 +212,9 @@ function Board({ puzzle, items, onNew }: { puzzle: Puzzle; items: Map<string, Vo
         {complete ? (revealed ? 'Ответы открыты.' : `Все слова найдены за ${formatTime(elapsed)}!`) : message}
       </p>
 
-      <div class="sheet stack">
+      <section class="section">
         <p class="section-title">Найдите по переводу</p>
+        <div class="sheet">
         <ul class="clues">
           {words.map((w, i) => {
             const color = found.get(i);
@@ -233,7 +234,8 @@ function Board({ puzzle, items, onNew }: { puzzle: Puzzle; items: Map<string, Vo
             );
           })}
         </ul>
-      </div>
+        </div>
+      </section>
 
       {!complete && (
         <div class="row">
