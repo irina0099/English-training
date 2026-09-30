@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'preact/hooks';
-import { VOCAB } from '../content';
+import { FAMILIES, VOCAB } from '../content';
 import { isFixed, mistakesByItem } from '../engine/mistakes';
 import { stage } from '../engine/fsrs';
 import { makeRng, randomSeed, shuffle } from '../engine/random';
@@ -12,12 +12,13 @@ import { useNav } from './context';
 import { useData } from './hooks';
 import { IconChevron, IconPlus, IconSearch } from './icons';
 
-type Filter = 'all' | 'B1' | 'B2' | 'phrases' | 'own' | 'hard';
+type Filter = 'all' | 'B1' | 'B2' | 'phrasal' | 'phrases' | 'own' | 'hard';
 
 const FILTERS: [Filter, string][] = [
   ['all', 'All'],
   ['B1', 'B1'],
   ['B2', 'B2'],
+  ['phrasal', 'Phrasal verbs'],
   ['phrases', 'Phrases'],
   ['own', 'Mine'],
   ['hard', 'Tricky'],
@@ -28,10 +29,15 @@ const FILTER_DECK: Record<Filter, string> = {
   all: 'Word cards',
   B1: 'B1 cards',
   B2: 'B2 cards',
+  phrasal: 'Phrasal verb cards',
   phrases: 'Phrase cards',
   own: 'My word cards',
   hard: 'Tricky word cards',
 };
+
+/** Verbs with several phrasal verbs get their own group; the rest share one. */
+const BIG_FAMILIES = FAMILIES.filter((f) => f.items.length >= 2);
+const OTHER_PHRASAL = FAMILIES.filter((f) => f.items.length < 2).flatMap((f) => f.items);
 const STAGE_ORDER = { learning: 0, new: 1, known: 2, mastered: 3 } as const;
 
 /** Up to 30 cards: open mistakes first, then words being learnt, new ones, and known ones last. */
@@ -63,6 +69,9 @@ export function Dictionary() {
       case 'B2':
         if (w.level !== filter || w.kind !== 'word' || w.custom) return false;
         break;
+      case 'phrasal':
+        if (!w.family) return false;
+        break;
       case 'phrases':
         if (w.kind !== 'phrase') return false;
         break;
@@ -78,6 +87,40 @@ export function Dictionary() {
     return w.en.toLowerCase().includes(q) || w.ru.toLowerCase().includes(q);
   });
   if (filter === 'hard') shown.sort((a, b) => (byItem.get(b.id)?.weight ?? 0) - (byItem.get(a.id)?.weight ?? 0));
+
+  const renderRow = (w: VocabItem) => {
+    const st = d.states[w.id];
+    const m = byItem.get(w.id);
+    const isOpen = open === w.id;
+    return (
+      <div key={w.id}>
+        <button type="button" class="list-item" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : w.id)}>
+          <StageDot state={st} />
+          <span class="list-item-main">
+            <b>{w.en}</b>
+            <span>{w.ru}</span>
+          </span>
+          {m && <span class="chip chip-red">×{m.count}</span>}
+          <LevelChip item={w} />
+          <IconChevron class="chevron" />
+        </button>
+        {isOpen && (
+          <div class="detail">
+            <WordCard item={w} />
+            <p class="muted small">{dueLabel(st, now)}</p>
+            {w.custom && (
+              <div class="row">
+                <button type="button" class="btn btn-sm" onClick={() => setEditing(w)}>
+                  Edit
+                </button>
+                <ConfirmButton class="btn btn-sm btn-ghost" label="Delete" confirmLabel="Delete word and progress" onConfirm={() => deleteCustomWord(w.id)} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div class="page">
@@ -133,42 +176,36 @@ export function Dictionary() {
             <p>Nothing found.</p>
           )}
         </div>
-      ) : (
-        <div class="list">
-          {shown.map((w) => {
-            const st = d.states[w.id];
-            const m = byItem.get(w.id);
-            const isOpen = open === w.id;
-            return (
-              <div key={w.id}>
-                <button type="button" class="list-item" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : w.id)}>
-                  <StageDot state={st} />
-                  <span class="list-item-main">
-                    <b>{w.en}</b>
-                    <span>{w.ru}</span>
-                  </span>
-                  {m && <span class="chip chip-red">×{m.count}</span>}
-                  <LevelChip item={w} />
-                  <IconChevron class="chevron" />
+      ) : filter === 'phrasal' && !query.trim() ? (
+        <>
+          {BIG_FAMILIES.map((f) => (
+            <section class="section" key={f.verb} aria-label={`Phrasal verbs with ${f.verb}`}>
+              <div class="family-head">
+                <h2>{f.verb}</h2>
+                <span class="muted" lang="ru">
+                  {f.ru}
+                </span>
+                <span class="spacer" />
+                <button
+                  type="button"
+                  class="btn btn-sm"
+                  onClick={() => nav.startSession({ kind: 'set', title: `${f.verb} + particles`, ids: f.items.map((i) => i.id) })}
+                >
+                  Practise
                 </button>
-                {isOpen && (
-                  <div class="detail">
-                    <WordCard item={w} />
-                    <p class="muted small">{dueLabel(st, now)}</p>
-                    {w.custom && (
-                      <div class="row">
-                        <button type="button" class="btn btn-sm" onClick={() => setEditing(w)}>
-                          Edit
-                        </button>
-                        <ConfirmButton class="btn btn-sm btn-ghost" label="Delete" confirmLabel="Delete word and progress" onConfirm={() => deleteCustomWord(w.id)} />
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
-            );
-          })}
-        </div>
+              <div class="list">{f.items.map(renderRow)}</div>
+            </section>
+          ))}
+          <section class="section" aria-label="More phrasal verbs">
+            <div class="family-head">
+              <h2>More phrasal verbs</h2>
+            </div>
+            <div class="list">{OTHER_PHRASAL.map(renderRow)}</div>
+          </section>
+        </>
+      ) : (
+        <div class="list">{shown.map(renderRow)}</div>
       )}
 
       {editing && <WordEditor word={editing === 'new' ? null : editing} custom={d.custom} onClose={() => setEditing(null)} />}

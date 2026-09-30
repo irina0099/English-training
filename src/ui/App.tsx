@@ -58,7 +58,7 @@ export function App() {
         } catch {
           // Some embedded views don't allow history changes; the tab still switches.
         }
-        window.scrollTo(0, 0);
+        document.getElementById('scroller')?.scrollTo(0, 0);
       },
       startSession(mode) {
         setRule(null);
@@ -82,26 +82,28 @@ export function App() {
 
   return (
     <NavContext.Provider value={nav}>
-      <main>
-        {tab === 'home' && <Home cloud={cloud} />}
-        {tab === 'words' && <Dictionary />}
-        {tab === 'games' && <Games key={game.key} initial={game.id} />}
-        {tab === 'mistakes' && <Mistakes />}
-        {tab === 'rules' && <Rules />}
-        {tab === 'settings' && <Settings cloud={cloud} />}
-      </main>
+      <div class="shell">
+        <main class="scroller" id="scroller">
+          {tab === 'home' && <Home cloud={cloud} />}
+          {tab === 'words' && <Dictionary />}
+          {tab === 'games' && <Games key={game.key} initial={game.id} />}
+          {tab === 'mistakes' && <Mistakes />}
+          {tab === 'rules' && <Rules />}
+          {tab === 'settings' && <Settings cloud={cloud} />}
+        </main>
 
-      <nav class="tabbar" aria-label="Sections">
-        <div class="tabbar-inner">
-          {TABS.map(([id, label, Icon]) => (
-            <button type="button" key={id} class="tab" aria-current={tab === id ? 'page' : undefined} onClick={() => nav.go(id)}>
-              <Icon size={22} />
-              {label}
-              {id === 'mistakes' && openMistakes > 0 && <span class="badge">{openMistakes > 99 ? '99+' : openMistakes}</span>}
-            </button>
-          ))}
-        </div>
-      </nav>
+        <nav class="tabbar" aria-label="Sections">
+          <div class="tabbar-inner">
+            {TABS.map(([id, label, Icon]) => (
+              <button type="button" key={id} class="tab" aria-current={tab === id ? 'page' : undefined} onClick={() => nav.go(id)}>
+                <Icon size={22} />
+                {label}
+                {id === 'mistakes' && openMistakes > 0 && <span class="badge">{openMistakes > 99 ? '99+' : openMistakes}</span>}
+              </button>
+            ))}
+          </div>
+        </nav>
+      </div>
 
       {session && <Session key={session.key} mode={session.mode} onClose={() => setSession(null)} />}
       {cards && <Flashcards key={cards.key} deck={cards.deck} onClose={() => setCards(null)} />}

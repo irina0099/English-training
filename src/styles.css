@@ -162,12 +162,16 @@
 }
 
 html {
+  height: 100%;
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
 }
 
 body {
+  height: 100%;
   margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
   background: var(--bg);
   color: var(--label);
   font-family: var(--font);
@@ -217,11 +221,42 @@ p {
 
 /* ——— Page structure ——— */
 
+/* App shell: only the content area scrolls, and the tab bar is part of the layout.
+   A tab bar with position: fixed gets stuck mid-screen on iPhone after the keyboard closes. */
+#app {
+  height: 100%;
+}
+
+.shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top, 0px);
+  background: var(--bg);
+}
+
+.scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* On claude.ai the host already pads the page by the safe-area insets. */
+.in-artifact .shell {
+  padding-top: 0;
+}
+
+.in-artifact .tabbar {
+  padding-bottom: 0;
+}
+
 .page {
   max-width: 640px;
   margin: 0 auto;
   padding-inline: 16px;
-  padding-block: 12px calc(var(--tabbar-h) + 28px + env(safe-area-inset-bottom, 0px));
+  padding-block: 12px 32px;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -1634,10 +1669,8 @@ button.list-item:disabled .list-item-main b {
 /* ——— Tab bar ——— */
 
 .tabbar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
+  flex: none;
   z-index: 10;
   background: var(--bar-bg);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -1848,4 +1881,27 @@ button.list-item:disabled .list-item-main b {
 
 .list-item:has(.check-example) {
   flex-wrap: wrap;
+}
+
+/* ——— Phrasal verb families ——— */
+
+.family-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding-inline: 16px;
+}
+
+.family-head h2 {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.family-head .muted {
+  font-size: 15px;
+}
+
+.family-head .btn-sm {
+  align-self: center;
 }

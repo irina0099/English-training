@@ -221,4 +221,90 @@ export const RULES_EN: Record<string, { title: string; summary: string; points: 
       'To make it stronger: much / a lot / far better (not very better).',
     ],
   },
+  'phrasal-object': {
+    title: 'Phrasal verbs: where the object goes',
+    summary: 'With many phrasal verbs, a noun can go before or after the particle (pick up the kids / pick the kids up), but a pronoun must go in the middle: pick them up, not pick up them.',
+    points: [
+      'Separable: pick up, turn on/off, put on, take off, give back, let down, call back, ask out.',
+      'Noun: turn off the TV = turn the TV off. Pronoun: turn it off (not turn off it).',
+      'Not separable (with a preposition): look after, look for, get over, deal with — the object always comes after: look after them.',
+    ],
+  },
+  future: {
+    title: 'The future: will, be going to, Present Continuous',
+    summary: 'will for a decision at the moment of speaking, a promise or an opinion about the future. be going to for a plan or something you can see coming. Present Continuous for an arrangement with a time and place.',
+    points: [
+      'will: — The phone’s ringing. — I’ll answer it. I’ll help you. I think it will rain.',
+      'be going to: I’m going to learn Spanish (a plan). Look at the clouds — it’s going to rain (you can see it).',
+      'Present Continuous: I’m meeting Anna at six tomorrow (it’s arranged).',
+      'After when, if, before and until about the future, use Present Simple: when I get home.',
+    ],
+  },
+  'past-continuous': {
+    title: 'Past Continuous and Past Simple',
+    summary: 'Past Continuous (was/were + -ing) is an action in progress in the past, the background. Past Simple is the short action that interrupted it: I was having a shower when the phone rang.',
+    points: [
+      'was/were + verb-ing: I was reading, they were talking.',
+      'when + Past Simple (a short event), while + Past Continuous (an action in progress).',
+      'Two actions in progress at the same time: While I was cooking, he was watching TV.',
+      'State verbs (know, like, want) are not usually used in the continuous form.',
+    ],
+  },
+  relative: {
+    title: 'who, which, that, where, whose',
+    summary: 'who (or that) for people, which (or that) for things, where for places, whose for possession: the man who lives next door, the book that you gave me, the café where we met.',
+    points: [
+      'who — people: the woman who helped me.',
+      'which — things and animals: the phone which I bought.',
+      'that — instead of who or which in everyday English.',
+      'where — places: the town where I grew up. whose — possession: a friend whose sister is a doctor.',
+    ],
+  },
+  'too-enough': {
+    title: 'too and enough',
+    summary: 'too + adjective means “more than is good” (too hot to drink). adjective + enough means “as much as needed” (old enough to drive). enough + noun (enough time).',
+    points: [
+      'too goes before the adjective: too expensive, too tired.',
+      'enough goes after an adjective but before a noun: tall enough, enough money.',
+      'Often followed by to + verb: too young to vote, fast enough to win.',
+    ],
+  },
+  quantifiers: {
+    title: 'few / a few, little / a little',
+    summary: 'few and a few go with countable nouns (friends), little and a little with uncountable nouns (time, milk). With a it means “some, enough”; without a it means “not much, almost none”.',
+    points: [
+      'a few friends — some friends (and that’s good).',
+      'few friends — not many friends (almost none).',
+      'a little time — some time; little time — not much time.',
+      'In conversation, people often say not many / not much instead of few / little.',
+    ],
+  },
+  'so-such': {
+    title: 'so and such',
+    summary: 'so + adjective or adverb (so tired, so quickly), such + (a/an) + adjective + noun (such a nice day, such kind people).',
+    points: [
+      'so beautiful, so fast, so much, so many.',
+      'such a good film, such an old house, such nice weather (uncountable — no a).',
+      'A result with that: It was so cold that we stayed at home.',
+    ],
+  },
+  'modal-deduction': {
+    title: 'must be, can’t be, might be: guessing',
+    summary: 'must be — you are almost sure it’s true. can’t be — you are almost sure it isn’t. might / may / could be — maybe. About the past: must have been, can’t have been.',
+    points: [
+      'She’s been working all day. She must be tired.',
+      'That can’t be Tom — he’s in London. (not mustn’t be)',
+      'I’m not sure where she is. She might be at the gym.',
+      'About the past: That must have been hard. He can’t have seen us.',
+    ],
+  },
+  'past-perfect': {
+    title: 'Past Perfect',
+    summary: 'had + past participle shows an action that happened before another action in the past: When we arrived, the film had already started.',
+    points: [
+      'had + past participle: had gone, had seen, had eaten.',
+      'Often with already, just, never, by the time, before.',
+      'If the order is already clear (after, before), Past Simple is also fine.',
+    ],
+  },
 };
