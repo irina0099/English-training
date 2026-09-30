@@ -44,7 +44,7 @@ const MODE_TITLES: Record<SessionMode['kind'], string> = {
 
 const modeTitle = (mode: SessionMode) => (mode.kind === 'set' ? mode.title : MODE_TITLES[mode.kind]);
 
-/** New words on top of the daily limit when the learner asks for more. */
+/** New words on top of the daily limit, offered when there is nothing else to practise. */
 const EXTRA_NEW = 5;
 
 const PRAISE = ['Correct!', 'Great!', 'Well done!', 'Exactly!', 'Nice one!'];
@@ -54,7 +54,8 @@ function contextFor(mode: SessionMode, rng: Rng, extraNew = 0): SessionContext {
   const now = Date.now();
   const everything = [...BUILTIN, ...d.custom];
   return {
-    items: mode.kind === 'daily' || mode.kind === 'custom' ? studyItems(d) : everything,
+    // Mistakes and words from games count whatever their level.
+    items: (mode.kind === 'daily' && !mode.more) || mode.kind === 'custom' ? studyItems(d) : everything,
     vocab: [...VOCAB, ...d.custom],
     states: d.states,
     mistakes: d.mistakes,
@@ -72,7 +73,7 @@ function planSession(mode: SessionMode, rng: Rng, extraNew = 0): Task[] {
 
 export function Session({ mode, onClose }: { mode: SessionMode; onClose: () => void }) {
   const rng = useMemo(() => makeRng(randomSeed()), []);
-  const [tasks, setTasks] = useState<Task[]>(() => planSession(mode, rng, mode.kind === 'daily' && mode.more ? EXTRA_NEW : 0));
+  const [tasks, setTasks] = useState<Task[]>(() => planSession(mode, rng));
   const [index, setIndex] = useState(0);
   const [answered, setAnswered] = useState<Answered | null>(null);
   const [mistakes, setMistakes] = useState<SessionMistake[]>([]);
@@ -126,7 +127,8 @@ export function Session({ mode, onClose }: { mode: SessionMode; onClose: () => v
   };
 
   const moreNew = () => {
-    setTasks(planSession(mode, rng, EXTRA_NEW));
+    // New words come from the regular plan, which keeps to the learner's levels.
+    setTasks(planSession({ kind: 'daily' }, rng, EXTRA_NEW));
     setIndex(0);
   };
 

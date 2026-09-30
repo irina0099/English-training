@@ -66,8 +66,8 @@ describe('planItems', () => {
     expect(review[0]?.id === target.id || review.some((i) => i.id === target.id)).toBe(true);
   });
 
-  it('does not repeat mistakes already answered today', () => {
-    // The day's plan is done: nothing due, no new words left, four mistakes answered right today.
+  it('keeps mistakes answered today out of the regular plan', () => {
+    // Nothing due and no new words left; four mistakes were answered right today.
     const states: Record<string, CardState> = {};
     const mistakes: Mistake[] = [];
     WORDS_B1.slice(0, 4).forEach((w) => {
@@ -75,24 +75,40 @@ describe('planItems', () => {
       mistakes.push({ id: w.id, at: NOW - 3_600_000, given: 'x', expected: w.en, ex: 'type-en', cat: 'vocab' });
     });
     expect(planItems({ kind: 'daily' }, ctx({ states, mistakes, newLeft: 0 }))).toEqual([]);
-    // They are still there for the mistakes practice the learner opens on purpose.
+    // "Practise more" and the mistakes practice still offer them.
+    expect(planItems({ kind: 'daily', more: true }, ctx({ states, mistakes, newLeft: 0 })).length).toBe(4);
     expect(planItems({ kind: 'mistakes' }, ctx({ states, mistakes })).length).toBeGreaterThanOrEqual(4);
   });
 
-  it('adds new words and reviews ahead when the learner wants more', () => {
+  describe('practise more, once the day is done', () => {
     const states: Record<string, CardState> = {};
+    const mistakes: Mistake[] = [];
     const answeredToday = WORDS_B1.slice(0, 4);
-    const dueSoon = WORDS_B1.slice(4, 10);
-    const dueLater = WORDS_B1.slice(10, 16);
-    answeredToday.forEach((w) => (states[w.id] = seen(NOW + DAY, { last: NOW - 60_000 })));
+    const fromGames = WORDS_B1.slice(4, 10);
+    const dueSoon = WORDS_B1.slice(10, 13);
+    const dueLater = WORDS_B1.slice(13, 16);
+    answeredToday.forEach((w) => {
+      states[w.id] = seen(NOW + DAY, { ok: 2, lapses: 1, last: NOW - 60_000 });
+      mistakes.push({ id: w.id, at: NOW - 3_600_000, given: 'x', expected: w.en, ex: 'type-en', cat: 'vocab' });
+    });
+    // Added after a game and never studied: no card state yet.
+    fromGames.forEach((w) => mistakes.push({ id: w.id, at: NOW - 7_200_000, given: '', expected: w.en, ex: 'game', cat: 'games' }));
     dueSoon.forEach((w) => (states[w.id] = seen(NOW + DAY, { last: NOW - 2 * DAY })));
     dueLater.forEach((w) => (states[w.id] = seen(NOW + 20 * DAY, { last: NOW - 2 * DAY })));
-    const plan = planItems({ kind: 'daily', more: true }, ctx({ states, newLeft: 5 }));
-    const ids = plan.map((i) => i.id);
-    expect(plan.filter((i) => !states[i.id])).toHaveLength(5);
-    expect(ids).toEqual(expect.arrayContaining(dueSoon.map((w) => w.id)));
-    expect(ids.some((id) => answeredToday.some((w) => w.id === id))).toBe(false);
-    expect(ids.some((id) => dueLater.some((w) => w.id === id))).toBe(false);
+    const ids = (list: readonly { id: string }[]) => list.map((w) => w.id);
+
+    it('trains every open mistake and word from games, then reviews ahead', () => {
+      const plan = ids(planItems({ kind: 'daily', more: true }, ctx({ states, mistakes, newLeft: 0 })));
+      expect(plan).toEqual(expect.arrayContaining([...ids(answeredToday), ...ids(fromGames), ...ids(dueSoon)]));
+      expect(plan.some((id) => ids(dueLater).includes(id))).toBe(false);
+      // No new words beyond the mistakes.
+      expect(plan.filter((id) => !states[id] && !ids(fromGames).includes(id))).toEqual([]);
+    });
+
+    it('starts with what was not practised today when there are too many', () => {
+      const plan = ids(planItems({ kind: 'daily', more: true }, ctx({ states, mistakes, newLeft: 0, size: 6 })));
+      expect(plan.sort()).toEqual(ids(fromGames).sort());
+    });
   });
 
   it('trains own words in the custom mode', () => {
