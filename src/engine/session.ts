@@ -13,6 +13,7 @@ export type Exercise =
   | { t: 'drill-pick'; item: Drill; options: string[]; answer: string }
   | { t: 'drill-type'; item: Drill; answer: string }
   | { t: 'drill-fix'; item: Drill; options: string[]; answer: string }
+  | { t: 'particle'; item: VocabItem; before: string; verb: string; middle: string; after: string; options: string[]; answer: string }
   | { t: 'card'; item: Item };
 
 export interface Task {
@@ -25,7 +26,9 @@ export type SessionMode =
   | { kind: 'daily' }
   | { kind: 'mistakes' }
   | { kind: 'custom' }
-  | { kind: 'rule'; rule: string };
+  | { kind: 'rule'; rule: string }
+  /** A hand-picked set, e.g. all phrasal verbs with "get". */
+  | { kind: 'set'; title: string; ids: string[] };
 
 export interface SessionContext {
   /** Items the learner studies (selected levels plus own words). */
@@ -60,6 +63,68 @@ export function phraseTiles(en: string): string[] {
     .filter(Boolean);
 }
 
+const PARTICLES = new Set([
+  'up', 'down', 'in', 'out', 'on', 'off', 'over', 'away', 'back', 'through', 'along', 'around', 'round',
+  'about', 'after', 'forward', 'together', 'apart', 'with', 'to', 'of', 'for', 'into', 'by', 'behind', 'across',
+]);
+
+/** Common particles to fill the options when a verb family is small, by number of words. */
+const PARTICLE_POOL: Record<number, string[]> = {
+  1: ['up', 'out', 'off', 'on', 'over', 'down', 'away', 'back', 'in', 'through'],
+  2: ['up with', 'on with', 'out of', 'down on', 'away with', 'up for', 'out with', 'down with', 'forward to', 'up to'],
+};
+
+export interface ParticleParts {
+  before: string;
+  verb: string;
+  middle: string;
+  after: string;
+  answer: string;
+}
+
+/**
+ * Splits the example of a phrasal verb so the particle can be blanked:
+ * "It took her months to *get over* the break-up." → before "It took her months to ",
+ * verb "get", answer "over". Also handles a split verb: "I’ll *pick* you *up*".
+ */
+export function particleParts(item: VocabItem): ParticleParts | null {
+  if (!item.family || !item.ex) return null;
+  const words = item.en.trim().split(/\s+/);
+  const particle = words.slice(1).join(' ');
+  if (!particle || !words.slice(1).every((w) => PARTICLES.has(w.toLowerCase()))) return null;
+  const parts = item.ex.split('*');
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  if (parts.length === 3) {
+    const [verb, ...rest] = parts[1].trim().split(/\s+/);
+    const answer = rest.join(' ');
+    if (!same(answer, particle)) return null;
+    return { before: parts[0], verb, middle: ' ', after: parts[2], answer };
+  }
+  if (parts.length === 5 && same(parts[3], particle)) {
+    return { before: parts[0], verb: parts[1], middle: parts[2], after: parts[4], answer: parts[3] };
+  }
+  return null;
+}
+
+function particleOptions(item: VocabItem, answer: string, vocab: readonly VocabItem[], rng: Rng): string[] {
+  const size = answer.split(' ').length;
+  const key = (s: string) => s.toLowerCase();
+  const seen = new Set([key(answer)]);
+  const out: string[] = [];
+  const add = (p: string) => {
+    if (out.length >= 3 || seen.has(key(p)) || p.split(' ').length !== size) return;
+    seen.add(key(p));
+    out.push(p);
+  };
+  // Siblings first: get over / get on / get by makes the choice meaningful.
+  shuffle(
+    vocab.filter((v) => v.family === item.family && v.id !== item.id).map((v) => v.en.split(/\s+/).slice(1).join(' ')),
+    rng,
+  ).forEach(add);
+  shuffle(PARTICLE_POOL[size] ?? PARTICLE_POOL[1], rng).forEach(add);
+  return shuffle([answer, ...out], rng);
+}
+
 /** Main Russian meaning without notes in brackets: "позволить себе (по деньгам)" → "позволить себе". */
 export function shortRu(ru: string): string {
   const plain = ru.replace(/\s*\([^)]*\)/g, '').trim();
@@ -92,6 +157,11 @@ function vocabTypes(item: VocabItem, state: CardState | undefined): ExerciseType
   const s = state?.s ?? 0;
   const hasGap = item.kind === 'word' && gapParts(item.ex) !== null;
   const canBuild = item.kind === 'phrase' && phraseTiles(item.en).length >= 3;
+  if (particleParts(item)) {
+    if (!state || s < 2) return ['pick-ru', 'particle'];
+    if (s < 7) return hasGap ? ['particle', 'pick-en', 'gap'] : ['particle', 'pick-en'];
+    return hasGap ? ['particle', 'type-en', 'gap'] : ['particle', 'type-en'];
+  }
   if (!state || s < 2) return ['pick-ru', 'pick-en'];
   if (item.kind === 'phrase') return canBuild ? ['build', 'pick-en'] : ['pick-en', 'pick-ru'];
   if (s < 7) return hasGap ? ['pick-en', 'type-en', 'gap'] : ['pick-en', 'type-en'];
@@ -132,6 +202,10 @@ export function makeExercise(
       const parts = gapParts(item.ex)!;
       return { t, item, before: parts.before, after: parts.after, answer: parts.answer };
     }
+    case 'particle': {
+      const p = particleParts(item)!;
+      return { t, item, ...p, options: particleOptions(item, p.answer, vocab, rng) };
+    }
     case 'build': {
       const tiles = phraseTiles(item.en);
       let mixed = shuffle(tiles, rng);
@@ -158,6 +232,7 @@ export function checkExercise(ex: Exercise, given: string): CheckResult {
     case 'pick-en':
     case 'drill-pick':
     case 'drill-fix':
+    case 'particle':
       return { verdict: given === ex.answer ? 'ok' : 'wrong', expected: ex.answer };
     case 'build':
       return { verdict: normalize(given) === normalize(ex.answer) ? 'ok' : 'wrong', expected: ex.answer };
@@ -265,6 +340,14 @@ export function planItems(mode: SessionMode, ctx: SessionContext): Item[] {
       take(fresh.filter((i) => own.includes(i)), size);
       take(byWeight(own.slice()), Math.ceil(size / 2));
       take(own.filter((i) => states[i.id]).sort((a, b) => states[a.id].s - states[b.id].s), size);
+      break;
+    }
+    case 'set': {
+      const wanted = new Set(mode.ids);
+      const related = items.filter((i) => wanted.has(i.id));
+      take(due.filter((i) => wanted.has(i.id)), size);
+      take(byWeight(related.filter((i) => weights.has(i.id))), size);
+      take(shuffle(related, ctx.rng), size);
       break;
     }
     case 'rule': {

@@ -25,6 +25,8 @@ export interface VocabItem {
   sit?: string;
   /** The same situation in Russian. */
   sitRu?: string;
+  /** Base verb of a phrasal verb: "get" for "get over". */
+  family?: string;
   custom?: boolean;
   createdAt?: number;
 }
@@ -135,6 +137,8 @@ export type ExerciseType =
   | 'drill-pick'
   | 'drill-type'
   | 'drill-fix'
+  /** Choose the particle of a phrasal verb: get ___ = пережить. */
+  | 'particle'
   /** Self-graded flashcard. */
   | 'card'
   /** Added to practice after a word game. */

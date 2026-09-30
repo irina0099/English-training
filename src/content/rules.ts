@@ -405,6 +405,158 @@ const RULES_RU: RuleRu[] = [
       ['Your English is much better now.', 'Your English is very better now.'],
     ],
   },
+  {
+    id: 'phrasal-object',
+    title: 'Фразовые глаголы: куда ставить дополнение',
+    level: 'B1',
+    summary:
+      'У многих фразовых глаголов существительное может стоять до или после частицы (pick up the kids / pick the kids up), но местоимение — только посередине: pick them up, а не pick up them.',
+    points: [
+      'Разделяемые: pick up, turn on/off, put on, take off, give back, let down, call back, ask out.',
+      'Существительное: turn off the TV = turn the TV off. Местоимение: turn it off (не turn off it).',
+      'Неразделяемые (с предлогом): look after, look for, get over, deal with — дополнение всегда после: look after them.',
+    ],
+    examples: [
+      ['I dropped my keys and picked them up.', 'I dropped my keys and picked up them.'],
+      ['Can you turn it off?', 'Can you turn off it?'],
+      ['She looks after her grandmother.', 'She looks her grandmother after.'],
+    ],
+  },
+  {
+    id: 'future',
+    title: 'Будущее: will, be going to, Present Continuous',
+    level: 'B1',
+    summary:
+      'will — решение в момент речи, обещание, прогноз-мнение. be going to — план или то, что вот-вот случится по признакам. Present Continuous — договорённость с временем и местом.',
+    points: [
+      'will: — The phone’s ringing. — I’ll answer it. I’ll help you. I think it will rain.',
+      'be going to: I’m going to learn Spanish (план). Look at the clouds — it’s going to rain (есть признаки).',
+      'Present Continuous: I’m meeting Anna at six tomorrow (уже договорились).',
+      'После when, if, before, until о будущем — Present Simple: when I get home.',
+    ],
+    examples: [
+      ['Look at those clouds! It’s going to rain.', 'Look at those clouds! It rains.'],
+      ['I’m seeing the dentist at 4 tomorrow.', 'I see the dentist at 4 tomorrow.'],
+      ['— It’s cold. — I’ll close the window.', '— It’s cold. — I close the window.'],
+    ],
+  },
+  {
+    id: 'past-continuous',
+    title: 'Past Continuous и Past Simple',
+    level: 'B1',
+    summary:
+      'Past Continuous (was/were + -ing) — процесс в прошлом, фон. Past Simple — короткое действие, которое его прервало: I was having a shower when the phone rang.',
+    points: [
+      'was/were + глагол с -ing: I was reading, they were talking.',
+      'when + Past Simple (короткое событие), while + Past Continuous (процесс).',
+      'Два одновременных процесса: While I was cooking, he was watching TV.',
+      'Глаголы состояния (know, like, want) обычно не ставят в Continuous.',
+    ],
+    examples: [
+      ['I was having a shower when the phone rang.', 'I had a shower when the phone was ringing.'],
+      ['What were you doing at 8 last night?', 'What did you doing at 8 last night?'],
+    ],
+  },
+  {
+    id: 'relative',
+    title: 'who, which, that, where, whose',
+    level: 'B1',
+    summary:
+      'who (или that) — о людях, which (или that) — о вещах, where — о месте, whose — «чей»: the man who lives next door, the book that you gave me, the café where we met.',
+    points: [
+      'who — люди: the woman who helped me.',
+      'which — вещи и животные: the phone which I bought.',
+      'that — вместо who или which в разговорной речи.',
+      'where — место: the town where I grew up. whose — принадлежность: a friend whose sister is a doctor.',
+    ],
+    examples: [
+      ['The man who lives next door is a doctor.', 'The man which lives next door is a doctor.'],
+      ['This is the café where we met.', 'This is the café which we met.'],
+      ['I have a friend whose brother is a pilot.', 'I have a friend who brother is a pilot.'],
+    ],
+  },
+  {
+    id: 'too-enough',
+    title: 'too и enough',
+    level: 'B1',
+    summary:
+      'too + прилагательное — «слишком» (too hot to drink). Прилагательное + enough — «достаточно» (old enough to drive). enough + существительное (enough time).',
+    points: [
+      'too стоит перед прилагательным: too expensive, too tired.',
+      'enough стоит после прилагательного, но перед существительным: tall enough, enough money.',
+      'Часто дальше идёт to + глагол: too young to vote, fast enough to win.',
+    ],
+    examples: [
+      ['This coffee is too hot to drink.', 'This coffee is enough hot to drink.'],
+      ['She isn’t tall enough to reach the shelf.', 'She isn’t enough tall to reach the shelf.'],
+    ],
+  },
+  {
+    id: 'quantifiers',
+    title: 'few / a few, little / a little',
+    level: 'B1',
+    summary:
+      'few и a few — с исчисляемыми (friends), little и a little — с неисчисляемыми (time, milk). С a — «немного, есть», без a — «мало, почти нет».',
+    points: [
+      'a few friends — несколько друзей (и это хорошо).',
+      'few friends — мало друзей (почти нет).',
+      'a little time — немного времени есть; little time — времени мало.',
+      'В разговоре чаще говорят not many / not much вместо few / little.',
+    ],
+    examples: [
+      ['There’s a little milk left.', 'There’s a few milk left.'],
+      ['I have a few close friends.', 'I have a little close friends.'],
+    ],
+  },
+  {
+    id: 'so-such',
+    title: 'so и such',
+    level: 'B2',
+    summary:
+      'so + прилагательное или наречие (so tired, so quickly), such + (a/an) + прилагательное + существительное (such a nice day, such kind people).',
+    points: [
+      'so beautiful, so fast, so much, so many.',
+      'such a good film, such an old house, such nice weather (неисчисляемое — без a).',
+      'Результат через that: It was so cold that we stayed at home.',
+    ],
+    examples: [
+      ['It was such a nice day that we went to the beach.', 'It was so nice day that we went to the beach.'],
+      ['The film was so boring that I left.', 'The film was such boring that I left.'],
+    ],
+  },
+  {
+    id: 'modal-deduction',
+    title: 'must be, can’t be, might be: догадки',
+    level: 'B2',
+    summary:
+      'must be — почти уверен, что да. can’t be — почти уверен, что нет. might / may / could be — возможно. О прошлом: must have been, can’t have been.',
+    points: [
+      'She’s been working all day. She must be tired.',
+      'That can’t be Tom — he’s in London. (не mustn’t be)',
+      'I’m not sure where she is. She might be at the gym.',
+      'О прошлом: That must have been hard. He can’t have seen us.',
+    ],
+    examples: [
+      ['He can’t be at home — his car isn’t there.', 'He mustn’t be at home — his car isn’t there.'],
+      ['You must be exhausted after the trip.', 'You can be exhausted after the trip.'],
+    ],
+  },
+  {
+    id: 'past-perfect',
+    title: 'Past Perfect',
+    level: 'B2',
+    summary:
+      'had + третья форма — действие, которое случилось раньше другого действия в прошлом: When we arrived, the film had already started.',
+    points: [
+      'had + past participle: had gone, had seen, had eaten.',
+      'Часто с already, just, never, by the time, before.',
+      'Если порядок и так ясен (after, before), можно и Past Simple.',
+    ],
+    examples: [
+      ['When we arrived, the film had already started.', 'When we arrived, the film has already started.'],
+      ['She was nervous because she had never flown before.', 'She was nervous because she has never flown before.'],
+    ],
+  },
 ];
 
 export const RULES: Rule[] = RULES_RU.map(({ id, level, examples, title, summary, points }) => {

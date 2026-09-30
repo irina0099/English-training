@@ -34,12 +34,15 @@ interface SessionMistake {
   expected: string;
 }
 
-const MODE_TITLE: Record<SessionMode['kind'], string> = {
+const MODE_TITLES: Record<SessionMode['kind'], string> = {
   daily: 'Practice',
   mistakes: 'Mistakes',
   custom: 'My words',
   rule: 'Rule practice',
+  set: 'Practice',
 };
+
+const modeTitle = (mode: SessionMode) => (mode.kind === 'set' ? mode.title : MODE_TITLES[mode.kind]);
 
 const PRAISE = ['Correct!', 'Great!', 'Well done!', 'Exactly!', 'Nice one!'];
 
@@ -127,13 +130,13 @@ export function Session({ mode, onClose }: { mode: SessionMode; onClose: () => v
   const progress = tasks.length ? Math.min(100, (index / tasks.length) * 100) : 0;
 
   return (
-    <div class="session" role="dialog" aria-label={MODE_TITLE[mode.kind]}>
+    <div class="session" role="dialog" aria-label={modeTitle(mode)}>
       <div class="session-bar">
         <div class="session-top">
           <button type="button" class="nav-btn" style={{ justifySelf: 'start' }} onClick={onClose}>
             Close
           </button>
-          <span class="counter">{tasks.length ? `${Math.min(index + 1, tasks.length)} of ${tasks.length}` : MODE_TITLE[mode.kind]}</span>
+          <span class="counter">{tasks.length ? `${Math.min(index + 1, tasks.length)} of ${tasks.length}` : modeTitle(mode)}</span>
           <span />
         </div>
         <div class="session-progress" aria-hidden="true">
@@ -207,7 +210,7 @@ function Summary({ mode, score, mistakes, onClose }: { mode: SessionMode; score:
   return (
     <div class="stack">
       <div class="sheet stack">
-        <p class="section-title">{MODE_TITLE[mode.kind]} complete</p>
+        <p class="section-title">{modeTitle(mode)} complete</p>
         <p class="title">
           {score.ok} of {count(score.n, 'answer')} correct
         </p>
@@ -263,6 +266,7 @@ const KIND_LABEL: Record<Exercise['t'], string> = {
   'drill-pick': 'Choose the right option',
   'drill-type': 'Type the missing word',
   'drill-fix': 'Which sentence is correct?',
+  particle: 'Choose the particle',
   card: 'Flashcard',
 };
 
@@ -325,7 +329,7 @@ function TaskView({ task, answered, onSubmit, onNext, onAccept }: TaskProps) {
         <LevelChip item={ex.item} />
       </div>
       <Prompt ex={ex} hint={hint} />
-      {(ex.t === 'pick-ru' || ex.t === 'pick-en' || ex.t === 'drill-pick' || ex.t === 'drill-fix') && (
+      {(ex.t === 'pick-ru' || ex.t === 'pick-en' || ex.t === 'drill-pick' || ex.t === 'drill-fix' || ex.t === 'particle') && (
         <Options options={ex.options} answer={ex.answer} answered={answered} onPick={submit} />
       )}
       {(ex.t === 'type-en' || ex.t === 'gap' || ex.t === 'drill-type') && (
@@ -415,6 +419,21 @@ function Prompt({ ex, hint }: { ex: Exercise; hint: boolean }) {
         </div>
       );
     }
+    case 'particle':
+      return (
+        <div class="sheet stack-sm">
+          <p class="prompt-sentence">
+            {ex.before}
+            {ex.verb}
+            {ex.middle}
+            <span class="blank">?</span>
+            {ex.after}
+          </p>
+          <p class="muted small">
+            Meaning: <span lang="ru">{ex.item.ru}</span>
+          </p>
+        </div>
+      );
     case 'drill-fix':
       return (
         <div class="sheet stack-sm">

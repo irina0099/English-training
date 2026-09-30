@@ -1,13 +1,14 @@
 import type { Item, Level, VocabItem } from '../types';
 import { DRILLS } from './drills';
+import { FAMILIES, PHRASAL } from './phrasal';
 import { PHRASES } from './phrases';
 import { RULES, RULES_BY_ID } from './rules';
 import { WORDS_B1 } from './words-b1';
 import { WORDS_B2 } from './words-b2';
 
-export { DRILLS, PHRASES, RULES, RULES_BY_ID, WORDS_B1, WORDS_B2 };
+export { DRILLS, FAMILIES, PHRASAL, PHRASES, RULES, RULES_BY_ID, WORDS_B1, WORDS_B2 };
 
-export const VOCAB: VocabItem[] = [...WORDS_B1, ...WORDS_B2, ...PHRASES];
+export const VOCAB: VocabItem[] = [...WORDS_B1, ...WORDS_B2, ...PHRASAL, ...PHRASES];
 export const BUILTIN: Item[] = [...VOCAB, ...DRILLS];
 
 const BUILTIN_BY_ID = new Map<string, Item>(BUILTIN.map((item) => [item.id, item]));
