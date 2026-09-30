@@ -1,6 +1,17 @@
-import type { Rule } from '../types';
+import type { Level, Rule } from '../types';
+import { RULES_EN } from './rules-en';
 
-export const RULES: Rule[] = [
+interface RuleRu {
+  id: string;
+  title: string;
+  level: Level;
+  summary: string;
+  points: string[];
+  examples: [string, string?][];
+}
+
+/** Russian texts; the English versions live in rules-en.ts. */
+const RULES_RU: RuleRu[] = [
   {
     id: 'prep-time',
     title: 'Предлоги времени: at / on / in',
@@ -320,8 +331,8 @@ export const RULES: Rule[] = [
       'В прошлом у must нет формы, используйте had to: I had to wait.',
     ],
     examples: [
-      ['You mustn’t smoke here. — Здесь курить нельзя.'],
-      ['You don’t have to come if you’re busy. — Можешь не приходить, если занят.'],
+      ['You mustn’t smoke here. (It isn’t allowed.)'],
+      ['You don’t have to come if you’re busy. (You can stay at home.)'],
       ['I must go now.', 'I must to go now.'],
     ],
   },
@@ -395,5 +406,11 @@ export const RULES: Rule[] = [
     ],
   },
 ];
+
+export const RULES: Rule[] = RULES_RU.map(({ id, level, examples, title, summary, points }) => {
+  const en = RULES_EN[id];
+  if (!en) throw new Error(`Missing English text for rule ${id}`);
+  return { id, level, examples, ...en, ru: { title, summary, points } };
+});
 
 export const RULES_BY_ID: Record<string, Rule> = Object.fromEntries(RULES.map((r) => [r.id, r]));

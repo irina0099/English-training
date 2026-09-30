@@ -3,7 +3,7 @@ import type { CloudStatus } from '../engine/cloud';
 import { isFixed, mistakesByItem } from '../engine/mistakes';
 import { dueCount, newLeftToday, progressOf, streak, todayKey, unseenCount } from '../engine/store';
 import type { Level } from '../types';
-import { plural, Row } from './common';
+import { Row } from './common';
 import { useNav } from './context';
 import { useData } from './hooks';
 import { IconBook, IconCards, IconGear, IconGrid, IconPen, IconShuffle } from './icons';
@@ -19,7 +19,7 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
   const days = streak(d, now);
   const openMistakes = [...mistakesByItem(d.mistakes, now).keys()].filter((id) => !isFixed(d.states[id])).length;
   const levels: (Level | 'own')[] = [...d.settings.levels, ...(d.custom.length ? (['own'] as const) : [])];
-  const date = new Date(now).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+  const date = new Date(now).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   const goal = d.settings.sessionSize;
 
   return (
@@ -27,37 +27,37 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
       <div class="page-head">
         <div class="stack-sm">
           <p class="eyebrow">{date}</p>
-          <h1 class="title">Сегодня</h1>
+          <h1 class="title">Today</h1>
         </div>
-        <button type="button" class="icon-btn" onClick={() => nav.go('settings')} aria-label="Настройки">
+        <button type="button" class="icon-btn" onClick={() => nav.go('settings')} aria-label="Settings">
           <IconGear size={20} />
         </button>
       </div>
 
-      <section class="sheet today" aria-label="Итоги дня">
+      <section class="sheet today" aria-label="Your day">
         <Rings
           rings={[
-            { label: 'Ответы', value: today.n / goal, text: `${today.n}/${goal}`, color: 'var(--ring-1)' },
-            { label: 'Новые', value: today.new / d.settings.newPerDay, text: `${today.new}/${d.settings.newPerDay}`, color: 'var(--ring-2)' },
-            { label: 'Точность', value: today.n ? today.ok / today.n : 0, text: today.n ? `${Math.round((today.ok / today.n) * 100)}%` : '—', color: 'var(--ring-3)' },
+            { label: 'Answers', value: today.n / goal, text: `${today.n}/${goal}`, color: 'var(--ring-1)' },
+            { label: 'New words', value: today.new / d.settings.newPerDay, text: `${today.new}/${d.settings.newPerDay}`, color: 'var(--ring-2)' },
+            { label: 'Accuracy', value: today.n ? today.ok / today.n : 0, text: today.n ? `${Math.round((today.ok / today.n) * 100)}%` : '—', color: 'var(--ring-3)' },
           ]}
         />
         <div class="facts">
           <div>
             <b>{due}</b>
-            <span>к повторению</span>
+            <span>due for review</span>
           </div>
           <div>
             <b>{newLeft}</b>
-            <span>{plural(newLeft, 'новое', 'новых', 'новых')} в запасе</span>
+            <span>new {newLeft === 1 ? 'word' : 'words'} left</span>
           </div>
           <div>
             <b>{days}</b>
-            <span>{plural(days, 'день', 'дня', 'дней')} подряд</span>
+            <span>{days === 1 ? 'day' : 'days'} in a row</span>
           </div>
         </div>
         <button type="button" class="btn btn-primary btn-block" onClick={() => nav.startSession({ kind: 'daily' })}>
-          {due + newLeft > 0 ? 'Начать тренировку' : 'Потренироваться ещё'}
+          {due + newLeft > 0 ? 'Start practice' : 'Practise more'}
         </button>
       </section>
 
@@ -65,15 +65,14 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
         <Row
           icon={<IconPen size={18} />}
           color="var(--red)"
-          title="Работа над ошибками"
-          value={openMistakes || 'нет'}
-          disabled={openMistakes === 0}
-          onClick={() => nav.startSession({ kind: 'mistakes' })}
+          title="Mistakes & flashcards"
+          value={openMistakes || 'none'}
+          onClick={() => nav.go('mistakes')}
         />
         <Row
           icon={<IconBook size={18} />}
           color="var(--orange)"
-          title={d.custom.length ? 'Мои слова' : 'Добавить свои слова'}
+          title={d.custom.length ? 'My words' : 'Add your own words'}
           value={d.custom.length || undefined}
           onClick={() => (d.custom.length ? nav.startSession({ kind: 'custom' }) : nav.go('words'))}
         />
@@ -81,7 +80,7 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
 
       <section class="section" aria-labelledby="progress">
         <p class="section-title" id="progress">
-          Прогресс
+          Progress
         </p>
         <div class="list">
           {levels.map((lvl) => {
@@ -91,8 +90,8 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
             const started = p.total ? ((p.started - p.known) / p.total) * 100 : 0;
             return (
               <div class="progress-row" key={lvl}>
-                <span class={`chip ${lvl === 'B2' ? 'chip-b2' : lvl === 'own' ? 'chip-own' : ''}`}>{lvl === 'own' ? 'Мои' : lvl}</span>
-                <div class="bar" role="img" aria-label={`Знаю ${p.known} из ${p.total}, изучаю ${p.started - p.known}`}>
+                <span class={`chip ${lvl === 'B2' ? 'chip-b2' : lvl === 'own' ? 'chip-own' : ''}`}>{lvl === 'own' ? 'Mine' : lvl}</span>
+                <div class="bar" role="img" aria-label={`${p.known} of ${p.total} known, ${p.started - p.known} learning`}>
                   {known > 0 && <i class="known" style={{ width: `${known}%` }} />}
                   {started > 0 && <i class="started" style={{ width: `${started}%` }} />}
                 </div>
@@ -104,19 +103,19 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
           })}
         </div>
         <p class="footnote">
-          Зелёное — помните уверенно (повторение не раньше чем через неделю), оранжевое — изучаете.{' '}
-          {cloud === 'synced' ? 'Прогресс хранится в вашем аккаунте.' : 'Прогресс хранится в этом браузере.'}
+          Green means you know it well (next review in a week or more), orange means you are still learning it.{' '}
+          {cloud === 'synced' ? 'Your progress is saved to your account.' : 'Your progress is saved in this browser.'}
         </p>
       </section>
 
       <section class="section" aria-labelledby="games">
         <p class="section-title" id="games">
-          Игры со словами
+          Word games
         </p>
         <div class="list with-icons">
-          <Row icon={<IconGrid size={18} />} color="var(--blue)" title="Филворд" subtitle="Слова, спрятанные змейкой" onClick={() => nav.go('games', 'filword')} />
-          <Row icon={<IconShuffle size={18} />} color="var(--purple)" title="Анаграммы" subtitle="Слово из перепутанных букв" onClick={() => nav.go('games', 'anagram')} />
-          <Row icon={<IconCards size={18} />} color="var(--green)" title="Пары" subtitle="Слово и перевод на время" onClick={() => nav.go('games', 'pairs')} />
+          <Row icon={<IconGrid size={18} />} color="var(--blue)" title="Fillword" subtitle="Find words hidden in the grid" onClick={() => nav.go('games', 'filword')} />
+          <Row icon={<IconShuffle size={18} />} color="var(--purple)" title="Anagrams" subtitle="Unscramble the letters" onClick={() => nav.go('games', 'anagram')} />
+          <Row icon={<IconCards size={18} />} color="var(--green)" title="Pairs" subtitle="Match words against the clock" onClick={() => nav.go('games', 'pairs')} />
         </div>
       </section>
     </div>

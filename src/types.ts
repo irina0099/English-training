@@ -21,8 +21,10 @@ export interface VocabItem {
   note?: string;
   /** Id of the grammar rule that explains typical mistakes with this item. */
   rule?: string;
-  /** Situation prompt for phrases: when would you say it? */
+  /** Situation prompt for phrases, in English: when would you say it? */
   sit?: string;
+  /** The same situation in Russian. */
+  sitRu?: string;
   custom?: boolean;
   createdAt?: number;
 }
@@ -50,15 +52,20 @@ export interface Drill {
 
 export type Item = VocabItem | Drill;
 
-export interface Rule {
-  id: string;
+export interface RuleText {
   title: string;
-  level: Level;
   /** One or two sentences: the short version shown after an answer. */
   summary: string;
   points: string[];
+}
+
+/** A grammar rule in simple English, with a Russian version on request. */
+export interface Rule extends RuleText {
+  id: string;
+  level: Level;
   /** Pairs of [correct, incorrect?]. */
   examples: [string, string?][];
+  ru: RuleText;
 }
 
 /** FSRS memory state of one item. Times are epoch milliseconds. */
@@ -83,7 +90,7 @@ export interface Mistake {
   given: string;
   expected: string;
   ex: ExerciseType;
-  /** Rule id, 'vocab' or 'spelling'. */
+  /** Rule id, 'vocab', 'spelling' or 'games'. */
   cat: string;
 }
 
@@ -101,6 +108,8 @@ export interface Settings {
   sessionSize: number;
   newPerDay: number;
   autoSpeak: boolean;
+  /** Show Russian translations of examples right away instead of on tap. */
+  showTranslations: boolean;
 }
 
 export interface AppData {
@@ -125,6 +134,10 @@ export type ExerciseType =
   | 'build'
   | 'drill-pick'
   | 'drill-type'
-  | 'drill-fix';
+  | 'drill-fix'
+  /** Self-graded flashcard. */
+  | 'card'
+  /** Added to practice after a word game. */
+  | 'game';
 
 export type Verdict = 'ok' | 'typo' | 'wrong';

@@ -2,10 +2,25 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { RULES_BY_ID } from '../content';
 import { stage } from '../engine/fsrs';
+import { getData } from '../engine/store';
 import { canSpeak, speak } from '../tts';
 import type { CardState, Item, VocabItem } from '../types';
 import { useNav } from './context';
 import { IconChevron, IconRule, IconSpeaker } from './icons';
+
+/**
+ * A Russian translation kept one tap away, so the page stays in English.
+ * Settings → "Always show translations" shows them right away.
+ */
+export function Translation({ text, label = 'Show translation', lang = 'ru' }: { text: string; label?: string; lang?: string }) {
+  const [open, setOpen] = useState(() => getData().settings.showTranslations);
+  if (open) return <p class="example-ru" lang={lang}>{text}</p>;
+  return (
+    <button type="button" class="reveal" onClick={() => setOpen(true)}>
+      {label}
+    </button>
+  );
+}
 
 /** Renders an example sentence, highlighting the *marked* target words. */
 export function Example({ text, ru }: { text: string; ru?: string }) {
@@ -15,12 +30,12 @@ export function Example({ text, ru }: { text: string; ru?: string }) {
       <p class="example">
         {parts.map((part, i) => (i % 2 === 1 ? <mark key={i}>{part}</mark> : part))}
       </p>
-      {ru && <p class="example-ru">{ru}</p>}
+      {ru && <Translation text={ru} />}
     </div>
   );
 }
 
-export function SpeakButton({ text, label = 'Произнести' }: { text: string; label?: string }) {
+export function SpeakButton({ text, label = 'Listen' }: { text: string; label?: string }) {
   if (!canSpeak()) return null;
   return (
     <button type="button" class="icon-btn" onClick={() => speak(text)} aria-label={label} title={label}>
@@ -30,37 +45,38 @@ export function SpeakButton({ text, label = 'Произнести' }: { text: st
 }
 
 export function LevelChip({ item }: { item: Item }) {
-  if (item.kind !== 'drill' && item.custom) return <span class="chip chip-own">МОЁ</span>;
+  if (item.kind !== 'drill' && item.custom) return <span class="chip chip-own">MINE</span>;
   if (!item.level) return null;
   return <span class={`chip ${item.level === 'B2' ? 'chip-b2' : ''}`}>{item.level}</span>;
 }
 
-const STAGE_LABEL = { new: 'новое', learning: 'учу', known: 'знаю', mastered: 'выучено' } as const;
+const STAGE_LABEL = { new: 'new', learning: 'learning', known: 'known', mastered: 'mastered' } as const;
 
 export function StageDot({ state }: { state: CardState | undefined }) {
   const st = stage(state);
   return <span class={`dot dot-${st}`} title={STAGE_LABEL[st]} aria-label={STAGE_LABEL[st]} />;
 }
 
-export function stageLabel(state: CardState | undefined): string {
-  return STAGE_LABEL[stage(state)];
-}
-
-/** The short rule shown next to an answer, with a link to the full explanation. */
-export function RuleNote({ ruleId, heading = 'Почему так' }: { ruleId: string; heading?: string }) {
+/** The short rule shown next to an answer, with a Russian version and a link to the full rule. */
+export function RuleNote({ ruleId, heading = 'Why' }: { ruleId: string; heading?: string }) {
   const nav = useNav();
+  const [ru, setRu] = useState(false);
   const rule = RULES_BY_ID[ruleId];
   if (!rule) return null;
+  const text = ru ? rule.ru : rule;
   return (
     <div class="rule-note">
       <IconRule size={22} />
-      <h4>
-        {heading}: {rule.title}
+      <h4 lang={ru ? 'ru' : 'en'}>
+        {heading}: {text.title}
       </h4>
-      <p>{rule.summary}</p>
-      <div>
+      <p lang={ru ? 'ru' : 'en'}>{text.summary}</p>
+      <div class="row" style={{ gap: '16px' }}>
         <button type="button" class="link" onClick={() => nav.openRule(rule.id)}>
-          Правило целиком
+          Full rule
+        </button>
+        <button type="button" class="link" aria-pressed={ru} onClick={() => setRu(!ru)}>
+          {ru ? 'EN' : 'RU'}
         </button>
       </div>
     </div>
@@ -68,35 +84,33 @@ export function RuleNote({ ruleId, heading = 'Почему так' }: { ruleId: 
 }
 
 /** Everything about one word or phrase: translation, example, usage note, rule. */
-export function WordCard({ item, compact = false }: { item: VocabItem; compact?: boolean }) {
+export function WordCard({ item }: { item: VocabItem }) {
   return (
     <div class="stack">
-      {!compact && (
-        <div class="row">
-          <span class="word">{item.en}</span>
-          <SpeakButton text={item.en} />
-        </div>
-      )}
+      <div class="row">
+        <span class="word">{item.en}</span>
+        <SpeakButton text={item.en} />
+      </div>
       <div class="row">
         {item.pos && <span class="pos">{item.pos}</span>}
         <LevelChip item={item} />
-        <span>{item.ru}</span>
+        <span lang="ru">{item.ru}</span>
       </div>
       {item.ex && (
         <div class="row" style={{ alignItems: 'flex-start', flexWrap: 'nowrap' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Example text={item.ex} ru={item.exRu} />
           </div>
-          <SpeakButton text={item.ex} label="Произнести пример" />
+          <SpeakButton text={item.ex} label="Listen to the example" />
         </div>
       )}
       {item.note && <p class="note">{item.note}</p>}
-      {item.rule && <RuleNote ruleId={item.rule} heading="Правило" />}
+      {item.rule && <RuleNote ruleId={item.rule} heading="Rule" />}
     </div>
   );
 }
 
-/** iOS-style sheet: grabber, centred title, "Готово" on the right. */
+/** iOS-style sheet: grabber, centred title, "Done" on the right. */
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ComponentChildren }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -110,7 +124,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
           <span class="grabber" aria-hidden="true" />
           <h2>{title}</h2>
           <button type="button" class="nav-btn" onClick={onClose}>
-            Готово
+            Done
           </button>
         </div>
         {children}
@@ -180,6 +194,7 @@ export function ConfirmButton({ label, confirmLabel, onConfirm, class: cls = 'bt
       <button
         type="button"
         class="btn btn-danger"
+        style={{ flex: 1 }}
         onClick={() => {
           setArmed(false);
           onConfirm();
@@ -188,33 +203,30 @@ export function ConfirmButton({ label, confirmLabel, onConfirm, class: cls = 'bt
         {confirmLabel}
       </button>
       <button type="button" class="btn btn-ghost" onClick={() => setArmed(false)}>
-        Отмена
+        Cancel
       </button>
     </div>
   );
 }
 
-export function plural(n: number, one: string, few: string, many: string): string {
-  const m10 = n % 10;
-  const m100 = n % 100;
-  if (m10 === 1 && m100 !== 11) return one;
-  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
-  return many;
+/** "1 word", "5 words". */
+export function count(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 export function relativeDay(at: number, now = Date.now()): string {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
+  if (at >= start.getTime()) return 'today';
   const diff = Math.floor((start.getTime() - at) / 86400000) + 1;
-  if (at >= start.getTime()) return 'сегодня';
-  if (diff <= 1) return 'вчера';
-  return `${diff} ${plural(diff, 'день', 'дня', 'дней')} назад`;
+  if (diff <= 1) return 'yesterday';
+  return `${diff} days ago`;
 }
 
 export function dueLabel(state: CardState | undefined, now = Date.now()): string {
-  if (!state) return 'ещё не изучали';
+  if (!state) return 'not studied yet';
   const days = Math.ceil((state.due - now) / 86400000);
-  if (days <= 0) return 'пора повторить';
-  if (days === 1) return 'повторение завтра';
-  return `повторение через ${days} ${plural(days, 'день', 'дня', 'дней')}`;
+  if (days <= 0) return 'due for review';
+  if (days === 1) return 'next review tomorrow';
+  return `next review in ${days} days`;
 }

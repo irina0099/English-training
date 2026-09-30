@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sessionSize: 15,
   newPerDay: 10,
   autoSpeak: false,
+  showTranslations: false,
 };
 
 export function defaultData(): AppData {
@@ -131,8 +132,19 @@ export interface AnswerRecord {
   scheduled: boolean;
 }
 
-/** Saves one answer: schedule, daily stats, rule stats and the mistake log. */
-export function recordAnswer(ex: Exercise, verdict: Verdict, given: string, grade: Grade, retry: boolean, now = Date.now()): AnswerRecord {
+/**
+ * Saves one answer: schedule, daily stats, rule stats and the mistake log.
+ * Flashcards pass `logMistake: false`: "Again" on a card resets the streak but is not a new mistake.
+ */
+export function recordAnswer(
+  ex: Exercise,
+  verdict: Verdict,
+  given: string,
+  grade: Grade,
+  retry: boolean,
+  now = Date.now(),
+  logMistake = true,
+): AnswerRecord {
   const item = ex.item;
   const prev = data.states[item.id];
   const sections: Section[] = ['progress'];
@@ -157,9 +169,9 @@ export function recordAnswer(ex: Exercise, verdict: Verdict, given: string, grad
 
   let mistakes = data.mistakes;
   let mistakeAt: number | undefined;
-  if (verdict !== 'ok') {
+  if (verdict !== 'ok' && logMistake) {
     const cat = item.kind === 'drill' ? item.rule : verdict === 'typo' ? 'spelling' : 'vocab';
-    const expected = 'answer' in ex ? ex.answer : '';
+    const expected = 'answer' in ex ? ex.answer : item.kind === 'drill' ? item.a : item.en;
     mistakes = appendMistake(mistakes, { id: item.id, at: now, given, expected, ex: ex.t, cat });
     mistakeAt = now;
     sections.push('mistakes');
@@ -180,6 +192,19 @@ export function acceptAnswer(rec: AnswerRecord, now = Date.now()) {
   const day = data.days[key];
   const days = day && rec.verdict === 'wrong' ? { ...data.days, [key]: { ...day, ok: day.ok + 1 } } : data.days;
   commit({ states, mistakes, days }, ['progress', 'mistakes'], now);
+}
+
+/** Words the learner chose to practise after a game: they join the mistakes list until answered right 3 times. */
+export function addToPractice(items: readonly Item[], now = Date.now()) {
+  let mistakes = data.mistakes;
+  for (const item of items) {
+    const expected = item.kind === 'drill' ? item.a : item.en;
+    mistakes = appendMistake(mistakes, { id: item.id, at: now, given: '', expected, ex: 'game', cat: 'games' });
+  }
+  const states = { ...data.states };
+  // Already studied words come up for review right away.
+  for (const item of items) if (states[item.id]) states[item.id] = { ...states[item.id], due: Math.min(states[item.id].due, now), ok: 0 };
+  commit({ mistakes, states }, ['mistakes', 'progress'], now);
 }
 
 export function updateSettings(patch: Partial<Settings>) {
@@ -264,13 +289,15 @@ export function progressOf(items: readonly Item[], states: AppData['states']): P
   return { total: items.length, started, known };
 }
 
+export class BackupError extends Error {}
+
 export function exportJson(d: AppData): string {
   return JSON.stringify(d);
 }
 
 export function importJson(text: string): AppData {
   const parsed: unknown = JSON.parse(text);
-  if (!isObject(parsed) || parsed.v !== 1) throw new Error('Это не резервная копия «Английской тетради».');
+  if (!isObject(parsed) || parsed.v !== 1) throw new BackupError('This is not an English Notebook backup.');
   const now = Date.now();
   const next = sanitize(parsed);
   return { ...next, stamps: { progress: now, mistakes: now, words: now } };

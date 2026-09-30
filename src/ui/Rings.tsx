@@ -2,7 +2,7 @@ export interface RingData {
   label: string;
   /** 0..1 */
   value: number;
-  /** Text next to the label, e.g. "8 из 15". */
+  /** Text next to the label, e.g. "8/15". */
   text: string;
   /** CSS colour token, e.g. var(--ring-1). */
   color: string;

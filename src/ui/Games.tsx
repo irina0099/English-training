@@ -15,16 +15,16 @@ export type PoolId = 'B1' | 'B2' | 'own' | 'hard';
 const POOLS: [PoolId, string][] = [
   ['B1', 'B1'],
   ['B2', 'B2'],
-  ['own', 'Мои'],
-  ['hard', 'Сложные'],
+  ['own', 'Mine'],
+  ['hard', 'Tricky'],
 ];
 
-const POOL_TITLE: Record<PoolId, string> = { B1: 'Слова B1', B2: 'Слова B2', own: 'Мои слова', hard: 'Сложные для меня' };
+const POOL_TITLE: Record<PoolId, string> = { B1: 'B1 words', B2: 'B2 words', own: 'My words', hard: 'Tricky words' };
 
 const GAMES: { id: GameId; title: string; text: string; icon: preact.ComponentChildren; color: string }[] = [
-  { id: 'filword', title: 'Филворд', text: 'Слова идут змейкой и занимают всю сетку. Ищите их по переводу.', icon: <IconGrid size={18} />, color: 'var(--blue)' },
-  { id: 'anagram', title: 'Анаграммы', text: 'Соберите слово из перепутанных букв — тренирует написание.', icon: <IconShuffle size={18} />, color: 'var(--purple)' },
-  { id: 'pairs', title: 'Пары', text: 'Соедините слово с переводом быстро и без ошибок.', icon: <IconCards size={18} />, color: 'var(--green)' },
+  { id: 'filword', title: 'Fillword', text: 'Words bend like a snake and fill the whole grid. Find them from the Russian clues.', icon: <IconGrid size={18} />, color: 'var(--blue)' },
+  { id: 'anagram', title: 'Anagrams', text: 'Put the letters in the right order. Good for spelling.', icon: <IconShuffle size={18} />, color: 'var(--purple)' },
+  { id: 'pairs', title: 'Pairs', text: 'Match each word with its translation, fast and without mistakes.', icon: <IconCards size={18} />, color: 'var(--green)' },
 ];
 
 /** Single words (not phrases) from the chosen pool. */
@@ -59,7 +59,7 @@ export function Games({ initial }: { initial: GameId | null }) {
     return (
       <div class="page">
         <div class="stack-sm">
-          <BackButton label="Игры" onClick={() => setGame(null)} />
+          <BackButton label="Games" onClick={() => setGame(null)} />
           <h1 class="title">{meta.title}</h1>
           <p class="subtitle">{poolLabel(pool)}</p>
         </div>
@@ -73,12 +73,12 @@ export function Games({ initial }: { initial: GameId | null }) {
   return (
     <div class="page">
       <div class="stack-sm">
-        <h1 class="title">Игры</h1>
-        <p class="subtitle">Лёгкий способ повторить слова. На расписание повторений игры не влияют.</p>
+        <h1 class="title">Games</h1>
+        <p class="subtitle">A relaxed way to meet words again. After each game you can add new words to your practice.</p>
       </div>
       <div class="section">
-        <p class="section-title">Какие слова</p>
-        <div class="segmented" role="group" aria-label="Набор слов">
+        <p class="section-title">Word set</p>
+        <div class="segmented" role="group" aria-label="Word set">
           {POOLS.map(([id, label]) => (
             <button type="button" key={id} aria-pressed={pool === id} onClick={() => setPool(id)}>
               {label}
@@ -87,10 +87,10 @@ export function Games({ initial }: { initial: GameId | null }) {
         </div>
         <p class="footnote">
           {words.length
-            ? `В наборе ${words.length} слов.`
+            ? `${words.length} words in this set.`
             : pool === 'own'
-              ? 'Своих слов пока нет — добавьте их в словаре. Пока игры возьмут слова вашего уровня.'
-              : 'Сложных слов пока нет: сюда попадают слова, в которых вы ошибались. Пока игры возьмут слова вашего уровня.'}
+              ? 'You haven’t added any words yet. For now the games will use words from your level.'
+              : 'No tricky words yet — words you get wrong will appear here. For now the games will use words from your level.'}
         </p>
       </div>
       <div class="list with-icons">

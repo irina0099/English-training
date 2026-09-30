@@ -88,12 +88,12 @@ export function parseBulk(text: string, level: Level | null): BulkResult {
       .map((p) => p.trim())
       .filter(Boolean);
     if (parts.length < 2) {
-      errors.push(`Строка ${i + 1}: нужен перевод через тире — «${line}»`);
+      errors.push(`Line ${i + 1}: add a translation after a dash — “${line}”`);
       return;
     }
     const [en, ru, ex, exRu] = parts;
     if (/[а-яё]/i.test(en)) {
-      errors.push(`Строка ${i + 1}: сначала английское слово, потом перевод — «${line}»`);
+      errors.push(`Line ${i + 1}: put the English word first, then the translation — “${line}”`);
       return;
     }
     drafts.push({ en, ru, ex, exRu, level });

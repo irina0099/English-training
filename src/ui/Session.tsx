@@ -16,7 +16,7 @@ import {
 import { acceptAnswer, getData, newLeftToday, recordAnswer, studyItems, type AnswerRecord } from '../engine/store';
 import { speak } from '../tts';
 import type { Drill, Item, Verdict } from '../types';
-import { Example, LevelChip, plural, RuleNote, SpeakButton, WordCard } from './common';
+import { count, Example, LevelChip, RuleNote, SpeakButton, Translation, WordCard } from './common';
 import { useNav } from './context';
 import { IconCheckCircle, IconXCircle } from './icons';
 
@@ -35,13 +35,13 @@ interface SessionMistake {
 }
 
 const MODE_TITLE: Record<SessionMode['kind'], string> = {
-  daily: 'Тренировка',
-  mistakes: 'Работа над ошибками',
-  custom: 'Мои слова',
-  rule: 'Правило',
+  daily: 'Practice',
+  mistakes: 'Mistakes',
+  custom: 'My words',
+  rule: 'Rule practice',
 };
 
-const PRAISE = ['Верно!', 'Отлично!', 'Так держать!', 'Точно!', 'Правильно!'];
+const PRAISE = ['Correct!', 'Great!', 'Well done!', 'Exactly!', 'Nice one!'];
 
 function contextFor(mode: SessionMode, rng: Rng, extraNew = 0): SessionContext {
   const d = getData();
@@ -131,9 +131,9 @@ export function Session({ mode, onClose }: { mode: SessionMode; onClose: () => v
       <div class="session-bar">
         <div class="session-top">
           <button type="button" class="nav-btn" style={{ justifySelf: 'start' }} onClick={onClose}>
-            Закрыть
+            Close
           </button>
-          <span class="counter">{tasks.length ? `${Math.min(index + 1, tasks.length)} из ${tasks.length}` : MODE_TITLE[mode.kind]}</span>
+          <span class="counter">{tasks.length ? `${Math.min(index + 1, tasks.length)} of ${tasks.length}` : MODE_TITLE[mode.kind]}</span>
           <span />
         </div>
         <div class="session-progress" aria-hidden="true">
@@ -157,20 +157,20 @@ function NothingToDo({ mode, onClose, onMoreNew }: { mode: SessionMode; onClose:
   const nav = useNav();
   const text =
     mode.kind === 'mistakes'
-      ? 'Ошибок для повторения нет. Когда вы ошибётесь в задании, оно появится здесь.'
+      ? 'No mistakes to practise. When you get something wrong, it will appear here.'
       : mode.kind === 'custom'
-        ? 'Своих слов пока нет. Добавьте слова в словаре, и они сразу появятся в тренировках.'
-        : 'На сегодня всё повторено, и дневной лимит новых слов исчерпан.';
+        ? 'You haven’t added any words yet. Add them in Words and they will join your practice.'
+        : 'You’ve reviewed everything for today and used up today’s new words.';
   return (
     <div class="sheet empty">
       <p class="title" style={{ fontSize: '1.2rem' }}>
-        Пока нечего тренировать
+        Nothing to practise right now
       </p>
       <p>{text}</p>
       <div class="row" style={{ justifyContent: 'center' }}>
         {mode.kind === 'daily' && (
           <button type="button" class="btn btn-primary" onClick={onMoreNew}>
-            Взять ещё 5 новых
+            Learn 5 more words
           </button>
         )}
         {mode.kind === 'custom' && (
@@ -182,7 +182,7 @@ function NothingToDo({ mode, onClose, onMoreNew }: { mode: SessionMode; onClose:
               nav.go('words');
             }}
           >
-            Добавить слова
+            Add words
           </button>
         )}
         <button
@@ -193,7 +193,7 @@ function NothingToDo({ mode, onClose, onMoreNew }: { mode: SessionMode; onClose:
             nav.go('games');
           }}
         >
-          Поиграть
+          Play a game
         </button>
       </div>
     </div>
@@ -207,19 +207,19 @@ function Summary({ mode, score, mistakes, onClose }: { mode: SessionMode; score:
   return (
     <div class="stack">
       <div class="sheet stack">
-        <p class="section-title">{MODE_TITLE[mode.kind]} завершена</p>
+        <p class="section-title">{MODE_TITLE[mode.kind]} complete</p>
         <p class="title">
-          {score.ok} из {score.n} {plural(score.n, 'ответа', 'ответов', 'ответов')} верно
+          {score.ok} of {count(score.n, 'answer')} correct
         </p>
         <p class="muted">
           {unique.length === 0
-            ? 'Без единой ошибки. Следующее повторение запланировано автоматически.'
-            : `Слова и задания с ошибками вернутся раньше обычного, пока вы не ответите на них верно три раза подряд.`}
+            ? 'No mistakes at all. Your next review is already scheduled.'
+            : 'Anything you got wrong will come back sooner, until you answer it correctly three times in a row.'}
         </p>
       </div>
       {unique.length > 0 && (
         <div class="stack">
-          <p class="section-title">Над чем поработать</p>
+          <p class="section-title">To work on</p>
           <div class="list">
             {unique.map((m) => (
               <div class="list-item" key={m.item.id}>
@@ -235,18 +235,18 @@ function Summary({ mode, score, mistakes, onClose }: { mode: SessionMode; score:
             ))}
           </div>
           {rules.map((r) => (
-            <RuleNote key={r} ruleId={r} heading="Повторите правило" />
+            <RuleNote key={r} ruleId={r} heading="Review" />
           ))}
         </div>
       )}
       <div class="sticky-actions">
         {unique.length > 0 && mode.kind !== 'mistakes' && (
           <button type="button" class="btn" onClick={() => nav.startSession({ kind: 'mistakes' })}>
-            Работа над ошибками
+            Practise mistakes
           </button>
         )}
         <button type="button" class="btn btn-primary" onClick={onClose}>
-          Готово
+          Done
         </button>
       </div>
     </div>
@@ -254,15 +254,16 @@ function Summary({ mode, score, mistakes, onClose }: { mode: SessionMode; score:
 }
 
 const KIND_LABEL: Record<Exercise['t'], string> = {
-  intro: 'Новое слово',
-  'pick-ru': 'Выберите перевод',
-  'pick-en': 'Как сказать по-английски?',
-  'type-en': 'Напишите по-английски',
-  gap: 'Вставьте слово',
-  build: 'Соберите фразу',
-  'drill-pick': 'Выберите вариант',
-  'drill-type': 'Впишите пропущенное',
-  'drill-fix': 'Какое предложение правильное?',
+  intro: 'New word',
+  'pick-ru': 'What does it mean?',
+  'pick-en': 'How do you say it?',
+  'type-en': 'Type it in English',
+  gap: 'Fill in the gap',
+  build: 'Build the phrase',
+  'drill-pick': 'Choose the right option',
+  'drill-type': 'Type the missing word',
+  'drill-fix': 'Which sentence is correct?',
+  card: 'Flashcard',
 };
 
 interface TaskProps {
@@ -309,7 +310,7 @@ function TaskView({ task, answered, onSubmit, onNext, onAccept }: TaskProps) {
         </div>
         <div class="sticky-actions">
           <button type="button" class="btn btn-primary" onClick={onNext}>
-            Запомнил(а), дальше
+            Got it
           </button>
         </div>
       </div>
@@ -319,7 +320,7 @@ function TaskView({ task, answered, onSubmit, onNext, onAccept }: TaskProps) {
   return (
     <div class="stack">
       <div class="row">
-        <p class="task-kind">{task.retry ? 'Ещё раз · ' : ''}{KIND_LABEL[ex.t]}</p>
+        <p class="task-kind">{task.retry ? 'Again · ' : ''}{KIND_LABEL[ex.t]}</p>
         <span class="spacer" />
         <LevelChip item={ex.item} />
       </div>
@@ -362,8 +363,9 @@ function Prompt({ ex, hint }: { ex: Exercise; hint: boolean }) {
         <div class="sheet stack-sm">
           {ex.item.kind === 'phrase' && ex.item.sit ? (
             <>
-              <p class="muted small">Ситуация</p>
+              <p class="muted small">Situation</p>
               <p class="prompt">{ex.prompt}</p>
+              {ex.item.sitRu && <Translation text={ex.item.sitRu} />}
             </>
           ) : (
             <p class="prompt">{ex.prompt}</p>
@@ -375,7 +377,7 @@ function Prompt({ ex, hint }: { ex: Exercise; hint: boolean }) {
         <div class="sheet stack-sm">
           <p class="prompt">{ex.item.ru}</p>
           {ex.item.pos && <p class="pos">{ex.item.pos}</p>}
-          {hint && <p class="muted">Подсказка: {hintText(ex)}</p>}
+          {hint && <p class="muted">Hint: {hintText(ex)}</p>}
         </div>
       );
     case 'gap':
@@ -387,9 +389,9 @@ function Prompt({ ex, hint }: { ex: Exercise; hint: boolean }) {
             {ex.after}
           </p>
           <p class="muted small">
-            Подсказка: {ex.item.ru}
-            {ex.item.exRu ? ` · ${ex.item.exRu}` : ''}
+            Meaning: <span lang="ru">{ex.item.ru}</span>
           </p>
+          {ex.item.exRu && <Translation text={ex.item.exRu} />}
         </div>
       );
     case 'build':
@@ -409,14 +411,15 @@ function Prompt({ ex, hint }: { ex: Exercise; hint: boolean }) {
             <span class="blank">{hint && ex.t === 'drill-type' ? hintText(ex) : '?'}</span>
             {after}
           </p>
-          {ex.item.ru && <p class="muted small">{ex.item.ru}</p>}
+          {ex.item.ru && <Translation text={ex.item.ru} />}
         </div>
       );
     }
     case 'drill-fix':
       return (
         <div class="sheet stack-sm">
-          <p class="muted small">Смысл: {ex.item.ru}</p>
+          <p class="muted small">Only one of these sentences is correct English.</p>
+          {ex.item.ru && <Translation text={ex.item.ru} label="Show the meaning" />}
         </div>
       );
     default:
@@ -465,7 +468,7 @@ function TypeAnswer({ answered, onSubmit, canHint, onHint }: { answered: Answere
       }}
     >
       <label class="sr-only" for="answer">
-        Ваш ответ
+        Your answer
       </label>
       <input
         id="answer"
@@ -479,20 +482,20 @@ function TypeAnswer({ answered, onSubmit, canHint, onHint }: { answered: Answere
         autocorrect="off"
         spellcheck={false}
         lang="en"
-        placeholder="Ответ по-английски"
+        placeholder="Type in English"
       />
       {!answered && (
         <div class="row">
           <button type="submit" class="btn btn-primary" style={{ flex: 1 }} disabled={!value.trim()}>
-            Проверить
+            Check
           </button>
           {canHint && (
             <button type="button" class="btn btn-ghost" onClick={onHint}>
-              Подсказка
+              Hint
             </button>
           )}
           <button type="button" class="btn btn-ghost" onClick={() => onSubmit('')}>
-            Не знаю
+            I don’t know
           </button>
         </div>
       )}
@@ -505,8 +508,8 @@ function BuildPhrase({ tiles, answered, onSubmit }: { tiles: string[]; answered:
   const complete = chosen.length === tiles.length;
   return (
     <div class="stack">
-      <div class="tiles-line" aria-label="Ваша фраза">
-        {chosen.length === 0 && <span class="muted small">Нажимайте на слова по порядку</span>}
+      <div class="tiles-line" aria-label="Your phrase">
+        {chosen.length === 0 && <span class="muted small">Tap the words in the right order</span>}
         {chosen.map((i, pos) => (
           <button type="button" key={`${i}-${pos}`} class="word-tile" disabled={Boolean(answered)} onClick={() => setChosen((c) => c.filter((_, k) => k !== pos))}>
             {tiles[i]}
@@ -522,7 +525,7 @@ function BuildPhrase({ tiles, answered, onSubmit }: { tiles: string[]; answered:
       </div>
       {!answered && (
         <button type="button" class="btn btn-primary" disabled={!complete} onClick={() => onSubmit(chosen.map((i) => tiles[i]).join(' '))}>
-          Проверить
+          Check
         </button>
       )}
     </div>
@@ -537,11 +540,11 @@ function Feedback({ ex, answered, onNext, onAccept }: { ex: Exercise; answered: 
     <div class={`sheet feedback ${verdict === 'wrong' ? 'is-wrong' : verdict === 'typo' ? 'is-typo' : ''}`} aria-live="polite">
       <p class={`verdict ${verdict}`}>
         {verdict === 'wrong' ? <IconXCircle size={26} /> : <IconCheckCircle size={26} />}
-        {answered.accepted ? 'Засчитано' : verdict === 'ok' ? praise : verdict === 'typo' ? 'Почти! Проверьте написание' : 'Ошибка'}
+        {answered.accepted ? 'Accepted' : verdict === 'ok' ? praise : verdict === 'typo' ? 'Almost! Check the spelling' : 'Not quite'}
       </p>
       {verdict !== 'ok' && (
         <div class="red-pen">
-          {answered.given ? <s>{answered.given}</s> : <span class="muted">нет ответа</span>}
+          {answered.given ? <s>{answered.given}</s> : <span class="muted">no answer</span>}
           <span class="fix">{answered.expected}</span>
         </div>
       )}
@@ -556,11 +559,11 @@ function Feedback({ ex, answered, onNext, onAccept }: { ex: Exercise; answered: 
       <div class="sticky-actions">
         {typed && verdict === 'wrong' && answered.given && !answered.accepted && (
           <button type="button" class="btn btn-ghost" onClick={onAccept}>
-            Мой ответ тоже верный
+            My answer was right too
           </button>
         )}
         <button type="button" class="btn btn-primary" onClick={onNext}>
-          Дальше
+          Next
         </button>
       </div>
     </div>

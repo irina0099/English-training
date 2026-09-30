@@ -6,6 +6,7 @@ import type { SessionMode } from '../engine/session';
 import { Modal } from './common';
 import { NavContext, type Nav, type Tab } from './context';
 import { Dictionary } from './Dictionary';
+import { Flashcards, type Deck } from './Flashcards';
 import { Games, type GameId } from './Games';
 import { Home } from './Home';
 import { useData } from './hooks';
@@ -16,11 +17,11 @@ import { Session } from './Session';
 import { Settings } from './Settings';
 
 const TABS: [Tab, string, typeof IconHome][] = [
-  ['home', 'Сегодня', IconHome],
-  ['words', 'Словарь', IconBook],
-  ['games', 'Игры', IconGrid],
-  ['mistakes', 'Ошибки', IconPen],
-  ['rules', 'Правила', IconRule],
+  ['home', 'Today', IconHome],
+  ['words', 'Words', IconBook],
+  ['games', 'Games', IconGrid],
+  ['mistakes', 'Mistakes', IconPen],
+  ['rules', 'Grammar', IconRule],
 ];
 const ALL_TABS: Tab[] = ['home', 'words', 'games', 'mistakes', 'rules', 'settings'];
 
@@ -34,6 +35,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>(readHash);
   const [game, setGame] = useState<{ id: GameId | null; key: number }>({ id: null, key: 0 });
   const [session, setSession] = useState<{ mode: SessionMode; key: number } | null>(null);
+  const [cards, setCards] = useState<{ deck: Deck; key: number } | null>(null);
   const [rule, setRule] = useState<string | null>(null);
   const [cloud, setCloud] = useState<CloudStatus>('local');
 
@@ -47,6 +49,8 @@ export function App() {
   const nav = useMemo<Nav>(
     () => ({
       go(next, gameId) {
+        setSession(null);
+        setCards(null);
         setTab(next);
         if (next === 'games') setGame({ id: gameId ?? null, key: Date.now() });
         try {
@@ -58,7 +62,13 @@ export function App() {
       },
       startSession(mode) {
         setRule(null);
+        setCards(null);
         setSession({ mode, key: Date.now() });
+      },
+      startCards(deck) {
+        setRule(null);
+        setSession(null);
+        if (deck.items.length) setCards({ deck, key: Date.now() });
       },
       openRule(id) {
         if (RULES_BY_ID[id]) setRule(id);
@@ -81,7 +91,7 @@ export function App() {
         {tab === 'settings' && <Settings cloud={cloud} />}
       </main>
 
-      <nav class="tabbar" aria-label="Разделы">
+      <nav class="tabbar" aria-label="Sections">
         <div class="tabbar-inner">
           {TABS.map(([id, label, Icon]) => (
             <button type="button" key={id} class="tab" aria-current={tab === id ? 'page' : undefined} onClick={() => nav.go(id)}>
@@ -94,6 +104,7 @@ export function App() {
       </nav>
 
       {session && <Session key={session.key} mode={session.mode} onClose={() => setSession(null)} />}
+      {cards && <Flashcards key={cards.key} deck={cards.deck} onClose={() => setCards(null)} />}
       {rule && (
         <Modal title={RULES_BY_ID[rule].title} onClose={() => setRule(null)}>
           <RuleBody rule={RULES_BY_ID[rule]} />

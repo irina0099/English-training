@@ -1,8 +1,8 @@
 {
-  "name": "Английская тетрадь",
-  "short_name": "Тетрадь",
-  "description": "Тренажёр английского B1–B2: слова, фразы, правила, повторение по расписанию и игры.",
-  "lang": "ru",
+  "name": "English Notebook",
+  "short_name": "Notebook",
+  "description": "An English B1–B2 trainer: words, phrases, grammar, spaced repetition, flashcards and games.",
+  "lang": "en",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

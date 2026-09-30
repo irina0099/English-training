@@ -11,7 +11,7 @@ if (!css.length || !js.length) throw new Error('Could not find built CSS/JS in d
 
 const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts\.googleapis\.com[^>]*>/)?.[0] ?? '';
 const page = [
-  '<title>Английская тетрадь</title>',
+  '<title>English Notebook</title>',
   fonts,
   `<style>${css.join('\n')}</style>`,
   '<div id="app"></div>',

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { makeRng, randomSeed, shuffle, type Rng } from '../engine/random';
 import type { VocabItem } from '../types';
+import { AddToPractice } from './AddToPractice';
 import { Example, SpeakButton } from './common';
 import type { PoolId } from './Games';
 
@@ -45,25 +46,13 @@ function Round({ list, seed, onAgain }: { list: VocabItem[]; seed: number; onAga
       <div class="stack">
         <div class="sheet stack">
           <p class="title">
-            {solved} из {results.length}
+            {solved} of {results.length}
           </p>
-          <p class="muted">{solved === results.length ? 'Все слова собраны без пропусков.' : 'Пропущенные слова стоит повторить в словаре.'}</p>
+          <p class="muted">{solved === results.length ? 'You solved every word.' : 'Words you skipped are worth practising.'}</p>
         </div>
-        <div class="list">
-          {results.map((r) => (
-            <div class="list-item" key={r.item.id} style={{ alignItems: 'flex-start' }}>
-              <span class={`chip ${r.solved ? (r.hinted ? '' : 'chip-green') : 'chip-red'}`}>{r.solved ? (r.hinted ? 'с подсказкой' : 'верно') : 'пропуск'}</span>
-              <div class="list-item-main">
-                <b>
-                  {r.item.en} <span class="muted">— {r.item.ru}</span>
-                </b>
-                {r.item.ex && <Example text={r.item.ex} />}
-              </div>
-            </div>
-          ))}
-        </div>
-        <button type="button" class="btn btn-primary" onClick={onAgain}>
-          Ещё 10 слов
+        <AddToPractice items={results.map((r) => r.item)} preselected={new Set(results.filter((r) => !r.solved || r.hinted).map((r) => r.item.id))} examples />
+        <button type="button" class="btn" onClick={onAgain}>
+          10 more words
         </button>
       </div>
     );
@@ -146,14 +135,14 @@ function Puzzle({ item, letters, position, onDone }: { item: VocabItem; letters:
       <div class="sheet stack-sm">
         <p class="prompt">{item.ru}</p>
       </div>
-      <div class={`slots ${wrong ? 'shake' : ''}`} aria-label={`Собрано: ${typed}`}>
+      <div class={`slots ${wrong ? 'shake' : ''}`} aria-label={`Your letters: ${typed}`}>
         {word.split('').map((_, pos) => (
           <button
             type="button"
             key={pos}
             class={`slot ${pos < chosen.length ? 'filled' : ''} ${state !== 'play' ? 'good' : ''}`}
             onClick={() => removeAt(pos)}
-            aria-label={pos < chosen.length ? `Убрать букву ${letters[chosen[pos]]}` : 'Пустая клетка'}
+            aria-label={pos < chosen.length ? `Remove the letter ${letters[chosen[pos]]}` : 'Empty box'}
           >
             {state === 'skipped' ? word[pos] : pos < chosen.length ? letters[chosen[pos]] : ''}
           </button>
@@ -169,13 +158,13 @@ function Puzzle({ item, letters, position, onDone }: { item: VocabItem; letters:
       {state === 'play' ? (
         <div class="row" style={{ justifyContent: 'center' }}>
           <button type="button" class="btn btn-sm" onClick={hint}>
-            Подсказка
+            Hint
           </button>
           <button type="button" class="btn btn-sm btn-ghost" onClick={() => setChosen([])}>
-            Стереть
+            Clear
           </button>
           <button type="button" class="btn btn-sm btn-ghost" onClick={() => setState('skipped')}>
-            Не знаю
+            I don’t know
           </button>
         </div>
       ) : (
@@ -187,7 +176,7 @@ function Puzzle({ item, letters, position, onDone }: { item: VocabItem; letters:
           {item.ex && <Example text={item.ex} ru={item.exRu} />}
           {state === 'skipped' && (
             <button type="button" class="btn btn-primary" onClick={() => onDone({ item, solved: false, hinted })}>
-              Дальше
+              Next
             </button>
           )}
         </div>

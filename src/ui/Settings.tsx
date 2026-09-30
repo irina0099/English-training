@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { CloudStatus } from '../engine/cloud';
-import { exportJson, importJson, replaceData, resetProgress, updateSettings } from '../engine/store';
+import { BackupError, exportJson, importJson, replaceData, resetProgress, updateSettings } from '../engine/store';
 import { canSpeak, speak } from '../tts';
 import type { Level } from '../types';
 import { BackButton, ConfirmButton } from './common';
@@ -28,9 +28,9 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
     setBackup(text);
     try {
       await navigator.clipboard.writeText(text);
-      setMessage('Копия скопирована. Сохраните её в Заметках или в файле.');
+      setMessage('Backup copied. Keep it in Notes or in a file.');
     } catch {
-      setMessage('Скопируйте текст из поля ниже вручную.');
+      setMessage('Copy the text from the box below.');
     }
   };
 
@@ -46,38 +46,38 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
   const restore = (text: string) => {
     try {
       replaceData(importJson(text), true);
-      setMessage('Прогресс восстановлен из копии.');
+      setMessage('Progress restored from the backup.');
       setBackup('');
     } catch (e) {
-      setMessage(e instanceof Error && e.message.includes('резервная') ? e.message : 'Не удалось прочитать копию: проверьте, что текст скопирован целиком.');
+      setMessage(e instanceof BackupError ? e.message : 'Couldn’t read the backup. Check that you copied all of the text.');
     }
   };
 
   return (
     <div class="page">
       <div class="stack-sm">
-        <BackButton label="Сегодня" onClick={() => nav.go('home')} />
-        <h1 class="title">Настройки</h1>
+        <BackButton label="Today" onClick={() => nav.go('home')} />
+        <h1 class="title">Settings</h1>
       </div>
 
       <section class="section">
-        <p class="section-title">Уровень</p>
+        <p class="section-title">Level</p>
         <div class="list">
           {(['B1', 'B2'] as const).map((l) => (
             <button type="button" key={l} class="list-item" role="menuitemcheckbox" aria-checked={s.levels.includes(l)} onClick={() => toggleLevel(l)}>
               <span class="list-item-main">
-                <b>{l === 'B1' ? 'B1 — средний' : 'B2 — выше среднего'}</b>
+                <b>{l === 'B1' ? 'B1 — Intermediate' : 'B2 — Upper-intermediate'}</b>
               </span>
               {s.levels.includes(l) && <IconCheck class="check" size={20} />}
             </button>
           ))}
         </div>
-        <p class="footnote">Можно выбрать оба уровня. Свои слова тренируются всегда.</p>
+        <p class="footnote">You can choose both. Your own words are always included.</p>
       </section>
 
       <section class="section">
-        <p class="section-title">Заданий в тренировке</p>
-        <div class="segmented" role="group" aria-label="Заданий в тренировке">
+        <p class="section-title">Tasks per practice</p>
+        <div class="segmented" role="group" aria-label="Tasks per practice">
           {[10, 15, 20, 30].map((n) => (
             <button type="button" key={n} aria-pressed={s.sessionSize === n} onClick={() => updateSettings({ sessionSize: n })}>
               {n}
@@ -87,8 +87,8 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
       </section>
 
       <section class="section">
-        <p class="section-title">Новых слов и заданий в день</p>
-        <div class="segmented" role="group" aria-label="Новых в день">
+        <p class="section-title">New words and tasks per day</p>
+        <div class="segmented" role="group" aria-label="New per day">
           {[5, 10, 15, 20].map((n) => (
             <button type="button" key={n} aria-pressed={s.newPerDay === n} onClick={() => updateSettings({ newPerDay: n })}>
               {n}
@@ -99,17 +99,17 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
 
       {canSpeak() && (
         <section class="section">
-          <p class="section-title">Произношение</p>
+          <p class="section-title">Pronunciation</p>
           <div class="list">
             <label class="list-item" for="auto-speak">
               <span class="list-item-main">
-                <b>Произносить новые слова</b>
+                <b>Say new words aloud</b>
               </span>
               <input id="auto-speak" type="checkbox" class="switch" checked={s.autoSpeak} onChange={(e) => updateSettings({ autoSpeak: e.currentTarget.checked })} />
             </label>
             <button type="button" class="list-item" onClick={() => speak('I’m looking forward to seeing you.')}>
               <span class="list-item-main">
-                <b style={{ color: 'var(--blue)' }}>Проверить звук</b>
+                <b style={{ color: 'var(--blue)' }}>Test the sound</b>
               </span>
             </button>
           </div>
@@ -117,23 +117,36 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
       )}
 
       <section class="section">
-        <p class="section-title">Резервная копия</p>
+        <p class="section-title">Translations</p>
+        <div class="list">
+          <label class="list-item" for="show-ru">
+            <span class="list-item-main">
+              <b>Always show translations</b>
+            </span>
+            <input id="show-ru" type="checkbox" class="switch" checked={s.showTranslations} onChange={(e) => updateSettings({ showTranslations: e.currentTarget.checked })} />
+          </label>
+        </div>
+        <p class="footnote">Off: translations of examples and sentences stay hidden until you tap “Show translation”, so you think in English first.</p>
+      </section>
+
+      <section class="section">
+        <p class="section-title">Backup</p>
         <div class="list">
           <button type="button" class="list-item" onClick={copy}>
             <span class="list-item-main">
-              <b style={{ color: 'var(--blue)' }}>Скопировать копию прогресса</b>
+              <b style={{ color: 'var(--blue)' }}>Copy a backup of my progress</b>
             </span>
           </button>
           {!IS_ARTIFACT && (
             <button type="button" class="list-item" onClick={download}>
               <span class="list-item-main">
-                <b style={{ color: 'var(--blue)' }}>Скачать файлом</b>
+                <b style={{ color: 'var(--blue)' }}>Download as a file</b>
               </span>
             </button>
           )}
           <label class="list-item" style={{ cursor: 'pointer' }}>
             <span class="list-item-main">
-              <b style={{ color: 'var(--blue)' }}>Восстановить из файла…</b>
+              <b style={{ color: 'var(--blue)' }}>Restore from a file…</b>
             </span>
             <input
               type="file"
@@ -148,27 +161,27 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
         </div>
         <p class="footnote">
           {cloud === 'synced'
-            ? 'Прогресс хранится в вашем аккаунте Claude и виден на всех устройствах, где вы открываете эту страницу.'
+            ? 'Your progress is saved to your Claude account, so it’s the same on every device where you open this page.'
             : cloud === 'connecting'
-              ? 'Подключаемся к хранилищу аккаунта…'
-              : 'Прогресс хранится в этом браузере. Чтобы перенести его на другое устройство, скопируйте копию и вставьте её там.'}
+              ? 'Connecting to your account…'
+              : 'Your progress is saved in this browser. To move it to another device, copy a backup and paste it there.'}
         </p>
       </section>
 
       <section class="section">
         <div class="field">
-          <label for="backup">Вставьте копию, чтобы восстановить</label>
+          <label for="backup">Paste a backup to restore it</label>
           <textarea id="backup" value={backup} onInput={(e) => setBackup(e.currentTarget.value)} spellcheck={false} />
         </div>
         <button type="button" class="btn" disabled={!backup.trim()} onClick={() => restore(backup)}>
-          Восстановить из текста
+          Restore from text
         </button>
         {message && <p class="footnote">{message}</p>}
       </section>
 
       <section class="section">
-        <ConfirmButton class="btn btn-danger btn-block" label="Сбросить прогресс" confirmLabel="Да, сбросить всё" onConfirm={resetProgress} />
-        <p class="footnote">Сотрёт расписание повторений, статистику и журнал ошибок. Ваши слова останутся.</p>
+        <ConfirmButton class="btn btn-danger btn-block" label="Reset progress" confirmLabel="Yes, reset everything" onConfirm={resetProgress} />
+        <p class="footnote">This deletes your review schedule, statistics and mistakes list. Your own words stay.</p>
       </section>
     </div>
   );

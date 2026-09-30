@@ -2,7 +2,7 @@ import { lettersOnly } from './check';
 import { shuffle, type Rng } from './random';
 
 /**
- * Филворд: a square grid completely filled by hidden words.
+ * Fillword (филворд): a square grid completely filled by hidden words.
  * Each word is a chain of cells that touch by a side and may turn at right angles;
  * every letter of the grid belongs to exactly one word.
  */
@@ -27,9 +27,9 @@ export interface Filword {
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
 export const DIFFICULTY: Record<Difficulty, { size: number; min: number; max: number; label: string }> = {
-  easy: { size: 5, min: 3, max: 6, label: 'Лёгкий · 5×5' },
-  medium: { size: 6, min: 3, max: 7, label: 'Средний · 6×6' },
-  hard: { size: 7, min: 4, max: 9, label: 'Сложный · 7×7' },
+  easy: { size: 5, min: 3, max: 6, label: 'Easy · 5×5' },
+  medium: { size: 6, min: 3, max: 7, label: 'Medium · 6×6' },
+  hard: { size: 7, min: 4, max: 9, label: 'Hard · 7×7' },
 };
 
 export function neighbours(cell: number, size: number): number[] {

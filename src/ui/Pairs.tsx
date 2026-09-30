@@ -3,7 +3,7 @@ import { makeRng, randomSeed, shuffle } from '../engine/random';
 import { shortRu } from '../engine/session';
 import type { VocabItem } from '../types';
 import { roundWords } from './Anagram';
-import { SpeakButton } from './common';
+import { AddToPractice } from './AddToPractice';
 import type { PoolId } from './Games';
 
 const PAIRS = 6;
@@ -32,6 +32,8 @@ function Board({ en, ru, onAgain }: { en: VocabItem[]; ru: VocabItem[]; onAgain:
   const [done, setDone] = useState<Set<string>>(new Set());
   const [bad, setBad] = useState<[string, string] | null>(null);
   const [errors, setErrors] = useState(0);
+  /** Words involved in a wrong match. */
+  const [confused, setConfused] = useState<Set<string>>(new Set());
   const [started] = useState(Date.now());
   const [finished, setFinished] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -53,6 +55,7 @@ function Board({ en, ru, onAgain }: { en: VocabItem[]; ru: VocabItem[]; onAgain:
     } else {
       setBad([a, b]);
       setErrors((n) => n + 1);
+      setConfused((s) => new Set([...s, a, b]));
       setTimeout(() => {
         setBad(null);
         setPickEn(null);
@@ -78,22 +81,12 @@ function Board({ en, ru, onAgain }: { en: VocabItem[]; ru: VocabItem[]; onAgain:
     return (
       <div class="stack">
         <div class="sheet stack">
-          <p class="title">{seconds} с</p>
-          <p class="muted">{errors === 0 ? 'Ни одной ошибки!' : `Ошибок: ${errors}.`}</p>
+          <p class="title">{seconds} s</p>
+          <p class="muted">{errors === 0 ? 'No mistakes at all!' : `Mistakes: ${errors}.`}</p>
         </div>
-        <div class="list">
-          {en.map((w) => (
-            <div class="list-item" key={w.id}>
-              <div class="list-item-main">
-                <b>{w.en}</b>
-                <span>{w.ru}</span>
-              </div>
-              <SpeakButton text={w.en} />
-            </div>
-          ))}
-        </div>
-        <button type="button" class="btn btn-primary" onClick={onAgain}>
-          Ещё раунд
+        <AddToPractice items={en} preselected={confused} examples />
+        <button type="button" class="btn" onClick={onAgain}>
+          Another round
         </button>
       </div>
     );
@@ -109,11 +102,11 @@ function Board({ en, ru, onAgain }: { en: VocabItem[]; ru: VocabItem[]; onAgain:
     <div class="stack">
       <div class="row">
         <span class="muted small">
-          Пар: {done.size} из {en.length} · ошибок: {errors}
+          Pairs: {done.size} of {en.length} · mistakes: {errors}
         </span>
         <span class="spacer" />
         <span class="muted small" style={{ fontVariantNumeric: 'tabular-nums' }}>
-          {seconds} с
+          {seconds} s
         </span>
       </div>
       <div class="pairs">

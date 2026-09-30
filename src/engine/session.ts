@@ -12,7 +12,8 @@ export type Exercise =
   | { t: 'build'; item: VocabItem; tiles: string[]; answer: string }
   | { t: 'drill-pick'; item: Drill; options: string[]; answer: string }
   | { t: 'drill-type'; item: Drill; answer: string }
-  | { t: 'drill-fix'; item: Drill; options: string[]; answer: string };
+  | { t: 'drill-fix'; item: Drill; options: string[]; answer: string }
+  | { t: 'card'; item: Item };
 
 export interface Task {
   ex: Exercise;
@@ -151,6 +152,7 @@ export interface CheckResult {
 export function checkExercise(ex: Exercise, given: string): CheckResult {
   switch (ex.t) {
     case 'intro':
+    case 'card':
       return { verdict: 'ok', expected: '' };
     case 'pick-ru':
     case 'pick-en':
@@ -196,15 +198,21 @@ function itemWeights(ctx: SessionContext): Map<string, number> {
   return out;
 }
 
-/** Order of new items: own words first, then B1 before B2 with some mixing. */
-function freshOrder(items: readonly Item[], rng: Rng): Item[] {
+/**
+ * Order of new items: own words first, then words added from games or with
+ * mistakes, then B1 before B2 with some mixing.
+ */
+function freshOrder(items: readonly Item[], rng: Rng, weights: Map<string, number>): Item[] {
   const custom = items.filter((i) => isVocab(i) && i.custom).sort((a, b) => ((a as VocabItem).createdAt ?? 0) - ((b as VocabItem).createdAt ?? 0));
+  const flagged = items
+    .filter((i) => !(isVocab(i) && i.custom) && weights.has(i.id))
+    .sort((a, b) => (weights.get(b.id) ?? 0) - (weights.get(a.id) ?? 0));
   const rest = items
-    .filter((i) => !(isVocab(i) && i.custom))
+    .filter((i) => !(isVocab(i) && i.custom) && !weights.has(i.id))
     .map((item) => ({ item, key: (item.level === 'B2' ? 0.6 : 0) + rng() }))
     .sort((a, b) => a.key - b.key)
     .map((x) => x.item);
-  return [...custom, ...rest];
+  return [...custom, ...flagged, ...rest];
 }
 
 /** Chooses which items go into a session. */
@@ -228,7 +236,11 @@ export function planItems(mode: SessionMode, ctx: SessionContext): Item[] {
     items.filter((i) => states[i.id] && states[i.id].due <= now),
     ctx.rng,
   ).sort((a, b) => states[a.id].due - states[b.id].due);
-  const fresh = freshOrder(items.filter((i) => !states[i.id]), ctx.rng);
+  const fresh = freshOrder(
+    items.filter((i) => !states[i.id]),
+    ctx.rng,
+    weights,
+  );
 
   switch (mode.kind) {
     case 'daily': {

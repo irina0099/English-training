@@ -3,7 +3,7 @@ import { adjacent, DIFFICULTY, generateFilword, type Difficulty, type Filword as
 import { makeRng, randomSeed } from '../engine/random';
 import { shortRu } from '../engine/session';
 import type { VocabItem } from '../types';
-import { Example, SpeakButton } from './common';
+import { AddToPractice } from './AddToPractice';
 import type { PoolId } from './Games';
 
 const toPoolWord = (w: VocabItem): PoolWord => ({ word: w.en, itemId: w.id, clue: shortRu(w.ru) });
@@ -23,19 +23,19 @@ export function Filword({ words, fallback, pool }: { words: VocabItem[]; fallbac
 
   return (
     <div class="stack">
-      <div class="segmented" role="group" aria-label="Сложность">
+      <div class="segmented" role="group" aria-label="Difficulty">
         {(Object.keys(DIFFICULTY) as Difficulty[]).map((d) => (
           <button type="button" key={d} aria-pressed={difficulty === d} onClick={() => setDifficulty(d)}>
             {DIFFICULTY[d].label}
           </button>
         ))}
       </div>
-      {mixed && <p class="muted small">Ваших слов подходящей длины не хватает на всю сетку, поэтому добавлены слова вашего уровня. Ваши слова стоят в сетке первыми.</p>}
+      {mixed && <p class="footnote">There aren’t enough words of the right length in this set, so some words from your level were added. Words from your set are placed first.</p>}
       {puzzle ? (
         <Board key={`${seed}-${difficulty}-${pool}`} puzzle={puzzle} items={items} onNew={() => setSeed(randomSeed())} />
       ) : (
         <div class="sheet empty">
-          <p>Не получилось собрать сетку из этих слов. Выберите другой набор или уровень сложности.</p>
+          <p>Couldn’t build a grid from these words. Try another word set or difficulty.</p>
         </div>
       )}
     </div>
@@ -52,7 +52,9 @@ function Board({ puzzle, items, onNew }: { puzzle: Puzzle; items: Map<string, Vo
   const [found, setFound] = useState<Map<number, number>>(new Map());
   const [path, setPath] = useState<number[]>([]);
   const [hints, setHints] = useState<Set<number>>(new Set());
-  const [message, setMessage] = useState('Проведите пальцем или мышью по буквам слова.');
+  /** Words the learner needed help with: hinted or revealed. */
+  const [helped, setHelped] = useState<Set<string>>(new Set());
+  const [message, setMessage] = useState('Drag your finger or mouse across the letters of a word.');
   const [shake, setShake] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [started] = useState(Date.now());
@@ -135,9 +137,9 @@ function Board({ puzzle, items, onNew }: { puzzle: Puzzle; items: Map<string, Vo
     const spelled = p.map((c) => letters[c]).join('');
     const reversed = spelled.split('').reverse().join('');
     if (words.some((w, i) => !found.has(i) && (w.word === spelled || w.word === reversed))) {
-      flash('Такое слово есть, но в сетке оно идёт другим путём.');
+      flash('That word is here, but it takes a different path in the grid.');
     } else {
-      flash(`«${spelled.toUpperCase()}» — такого слова здесь нет.`);
+      flash(`“${spelled.toUpperCase()}” isn’t one of the words.`);
     }
   };
 
@@ -161,14 +163,20 @@ function Board({ puzzle, items, onNew }: { puzzle: Puzzle; items: Map<string, Vo
     if (!open.length) return;
     const wi = open[Math.floor(Math.random() * open.length)];
     setHints(new Set([...hints, words[wi].cells[0]]));
-    setMessage(`Слово «${words[wi].clue}» начинается с подсвеченной буквы.`);
+    setHelped(new Set([...helped, words[wi].itemId]));
+    setMessage(`The word for “${words[wi].clue}” starts with the highlighted letter.`);
   };
 
   const reveal = () => {
     const next = new Map(found);
-    words.forEach((_, i) => {
-      if (!next.has(i)) next.set(i, (next.size % 6) + 1);
+    const missed = new Set(helped);
+    words.forEach((w, i) => {
+      if (!next.has(i)) {
+        next.set(i, (next.size % 6) + 1);
+        missed.add(w.itemId);
+      }
     });
+    setHelped(missed);
     setRevealed(true);
     setFound(next);
   };
@@ -180,7 +188,7 @@ function Board({ puzzle, items, onNew }: { puzzle: Puzzle; items: Map<string, Vo
     <div class="stack">
       <div class="row">
         <span class="muted small">
-          Найдено {found.size} из {words.length}
+          Found {found.size} of {words.length}
         </span>
         <span class="spacer" />
         <span class="muted small" style={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -209,11 +217,11 @@ function Board({ puzzle, items, onNew }: { puzzle: Puzzle; items: Map<string, Vo
         })}
       </div>
       <p class="toast" aria-live="polite">
-        {complete ? (revealed ? 'Ответы открыты.' : `Все слова найдены за ${formatTime(elapsed)}!`) : message}
+        {complete ? (revealed ? 'Here are the answers.' : `All words found in ${formatTime(elapsed)}!`) : message}
       </p>
 
       <section class="section">
-        <p class="section-title">Найдите по переводу</p>
+        <p class="section-title">Find the English words</p>
         <div class="sheet">
         <ul class="clues">
           {words.map((w, i) => {
@@ -240,39 +248,23 @@ function Board({ puzzle, items, onNew }: { puzzle: Puzzle; items: Map<string, Vo
       {!complete && (
         <div class="row">
           <button type="button" class="btn btn-sm" onClick={hint}>
-            Подсказка
+            Hint
           </button>
           <button type="button" class="btn btn-sm btn-ghost" onClick={reveal}>
-            Показать ответы
+            Show answers
           </button>
           <span class="spacer" />
           <button type="button" class="btn btn-sm btn-ghost" onClick={onNew}>
-            Новая сетка
+            New grid
           </button>
         </div>
       )}
 
       {complete && (
         <div class="stack">
-          <p class="section-title">Слова из этой сетки</p>
-          <div class="list">
-            {words.map((w) => {
-              const item = items.get(w.itemId);
-              return (
-                <div class="list-item" key={w.itemId} style={{ alignItems: 'flex-start' }}>
-                  <div class="list-item-main">
-                    <b>
-                      {item?.en ?? w.word} <span class="muted">— {item?.ru ?? w.clue}</span>
-                    </b>
-                    {item?.ex && <Example text={item.ex} ru={item.exRu} />}
-                  </div>
-                  <SpeakButton text={item?.en ?? w.word} />
-                </div>
-              );
-            })}
-          </div>
-          <button type="button" class="btn btn-primary" onClick={onNew}>
-            Новая сетка
+          <AddToPractice items={words.map((w) => items.get(w.itemId)).filter((w): w is VocabItem => Boolean(w))} preselected={helped} examples />
+          <button type="button" class="btn" onClick={onNew}>
+            New grid
           </button>
         </div>
       )}

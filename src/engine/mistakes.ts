@@ -66,8 +66,9 @@ export function isFixed(state: CardState | undefined): boolean {
 }
 
 export function categoryLabel(cat: string): string {
-  if (cat === 'vocab') return 'Значения слов и фраз';
-  if (cat === 'spelling') return 'Орфография (опечатки)';
+  if (cat === 'vocab') return 'Word meanings';
+  if (cat === 'spelling') return 'Spelling';
+  if (cat === 'games') return 'Words from games';
   return RULES_BY_ID[cat]?.title ?? cat;
 }
 
