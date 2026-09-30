@@ -24,7 +24,7 @@ export interface Task {
 }
 
 export type SessionMode =
-  /** `more`: extra practice once the day's plan is done — more new words and reviews ahead of time. */
+  /** `more`: extra practice once the day's plan is done — open mistakes, words from games, weak spots. */
   | { kind: 'daily'; more?: boolean }
   | { kind: 'mistakes' }
   | { kind: 'custom' }
@@ -331,23 +331,32 @@ export function planItems(mode: SessionMode, ctx: SessionContext): Item[] {
 
   switch (mode.kind) {
     case 'daily': {
-      // An item answered today has had its practice: pulling it in again the same
-      // day only repeats the same few tasks. It comes back when it is due.
       const today = startOfDay(now);
-      const notToday = (i: Item) => states[i.id].last < today;
-      const weak = byWeight(items.filter((i) => states[i.id] && states[i.id].due > now && notToday(i) && (weights.get(i.id) ?? 0) >= 0.4));
+      const answeredToday = (i: Item) => !!states[i.id] && states[i.id].last >= today;
+      if (mode.more) {
+        // The day's plan is done: work through every open mistake, including words
+        // added from games that were never studied, then other weak spots. What has
+        // not been practised yet today comes first, so rounds don't open the same way.
+        const notTodayFirst = (list: Item[]) => [...list.filter((i) => !answeredToday(i)), ...list.filter(answeredToday)];
+        const open = byWeight(items.filter((i) => (weights.get(i.id) ?? 0) > 0 && !isFixed(states[i.id])));
+        const weak = byWeight(items.filter((i) => states[i.id] && (weights.get(i.id) ?? 0) >= 0.4));
+        take(notTodayFirst(open), size);
+        take(notTodayFirst(weak), size);
+        // Room left: review ahead what would come back soonest.
+        const ahead = items
+          .filter((i) => states[i.id] && states[i.id].due > now && states[i.id].due - now < REVIEW_AHEAD && !answeredToday(i))
+          .sort((a, b) => states[a.id].due - states[b.id].due);
+        take(ahead, size);
+        break;
+      }
+      // An item answered today has had its practice: in the regular plan it comes
+      // back when it is due rather than as a weak spot the same day.
+      const weak = byWeight(items.filter((i) => states[i.id] && states[i.id].due > now && !answeredToday(i) && (weights.get(i.id) ?? 0) >= 0.4));
       take(due, Math.ceil(size * 0.6));
       take(weak, Math.ceil(size * 0.25));
       take(fresh, Math.min(ctx.newLeft, Math.max(Math.ceil(size * 0.15), size - chosen.length)));
       take(due, size);
       take(weak, size);
-      if (mode.more) {
-        // Review ahead: what would come back soonest.
-        const ahead = items
-          .filter((i) => states[i.id] && states[i.id].due > now && states[i.id].due - now < REVIEW_AHEAD && notToday(i))
-          .sort((a, b) => states[a.id].due - states[b.id].due);
-        take(ahead, size);
-      }
       break;
     }
     case 'mistakes': {

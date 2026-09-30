@@ -1,4 +1,5 @@
 import type { ComponentChildren } from 'preact';
+import { createPortal } from 'preact/compat';
 import { useEffect, useState } from 'preact/hooks';
 import { RULES_BY_ID } from '../content';
 import { stage } from '../engine/fsrs';
@@ -117,7 +118,9 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  return (
+  // Rendered into <body>: inside the page's scroll area, Safari on iPhone clips the
+  // sheet to that area and the tab bar covers its bottom.
+  return createPortal(
     <div class="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div class="modal" role="dialog" aria-modal="true" aria-label={title}>
         <div class="modal-head">
@@ -129,7 +132,8 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
