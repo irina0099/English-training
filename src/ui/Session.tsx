@@ -13,7 +13,7 @@ import {
   type SessionMode,
   type Task,
 } from '../engine/session';
-import { acceptAnswer, getData, newLeftToday, recordAnswer, studyItems, type AnswerRecord } from '../engine/store';
+import { acceptAnswer, getData, newLeftToday, recordAnswer, studyItems, unseenCount, type AnswerRecord } from '../engine/store';
 import { speak } from '../tts';
 import type { Drill, Item, Verdict } from '../types';
 import { count, Example, LevelChip, RuleNote, SpeakButton, Translation, WordCard } from './common';
@@ -44,6 +44,9 @@ const MODE_TITLES: Record<SessionMode['kind'], string> = {
 
 const modeTitle = (mode: SessionMode) => (mode.kind === 'set' ? mode.title : MODE_TITLES[mode.kind]);
 
+/** New words on top of the daily limit when the learner asks for more. */
+const EXTRA_NEW = 5;
+
 const PRAISE = ['Correct!', 'Great!', 'Well done!', 'Exactly!', 'Nice one!'];
 
 function contextFor(mode: SessionMode, rng: Rng, extraNew = 0): SessionContext {
@@ -69,7 +72,7 @@ function planSession(mode: SessionMode, rng: Rng, extraNew = 0): Task[] {
 
 export function Session({ mode, onClose }: { mode: SessionMode; onClose: () => void }) {
   const rng = useMemo(() => makeRng(randomSeed()), []);
-  const [tasks, setTasks] = useState<Task[]>(() => planSession(mode, rng));
+  const [tasks, setTasks] = useState<Task[]>(() => planSession(mode, rng, mode.kind === 'daily' && mode.more ? EXTRA_NEW : 0));
   const [index, setIndex] = useState(0);
   const [answered, setAnswered] = useState<Answered | null>(null);
   const [mistakes, setMistakes] = useState<SessionMistake[]>([]);
@@ -123,7 +126,7 @@ export function Session({ mode, onClose }: { mode: SessionMode; onClose: () => v
   };
 
   const moreNew = () => {
-    setTasks(planSession(mode, rng, 5));
+    setTasks(planSession(mode, rng, EXTRA_NEW));
     setIndex(0);
   };
 
@@ -158,12 +161,15 @@ export function Session({ mode, onClose }: { mode: SessionMode; onClose: () => v
 
 function NothingToDo({ mode, onClose, onMoreNew }: { mode: SessionMode; onClose: () => void; onMoreNew: () => void }) {
   const nav = useNav();
+  const canLearnMore = mode.kind === 'daily' && unseenCount(getData()) > 0;
   const text =
     mode.kind === 'mistakes'
       ? 'No mistakes to practise. When you get something wrong, it will appear here.'
       : mode.kind === 'custom'
         ? 'You haven’t added any words yet. Add them in Words and they will join your practice.'
-        : 'You’ve reviewed everything for today and used up today’s new words.';
+        : canLearnMore
+          ? 'You’ve reviewed everything for today and used up today’s new words.'
+          : 'You’ve reviewed everything for today and learnt every word at your levels.';
   return (
     <div class="sheet empty">
       <p class="title" style={{ fontSize: '1.2rem' }}>
@@ -171,7 +177,7 @@ function NothingToDo({ mode, onClose, onMoreNew }: { mode: SessionMode; onClose:
       </p>
       <p>{text}</p>
       <div class="row" style={{ justifyContent: 'center' }}>
-        {mode.kind === 'daily' && (
+        {canLearnMore && (
           <button type="button" class="btn btn-primary" onClick={onMoreNew}>
             Learn 5 more words
           </button>

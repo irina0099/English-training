@@ -54,7 +54,7 @@ describe('planItems', () => {
 
   it('brings back items with recent mistakes even when they are not due', () => {
     const states: Record<string, CardState> = {};
-    WORDS_B1.slice(0, 20).forEach((w) => (states[w.id] = seen(NOW + 5 * DAY, { ok: 0 })));
+    WORDS_B1.slice(0, 20).forEach((w) => (states[w.id] = seen(NOW + 5 * DAY, { ok: 0, last: NOW - DAY })));
     const target = WORDS_B1[7];
     const mistakes: Mistake[] = [
       { id: target.id, at: NOW - DAY, given: 'x', expected: target.en, ex: 'type-en', cat: 'vocab' },
@@ -64,6 +64,35 @@ describe('planItems', () => {
     expect(plan.map((i) => i.id)).toContain(target.id);
     const review = planItems({ kind: 'mistakes' }, ctx({ states, mistakes }));
     expect(review[0]?.id === target.id || review.some((i) => i.id === target.id)).toBe(true);
+  });
+
+  it('does not repeat mistakes already answered today', () => {
+    // The day's plan is done: nothing due, no new words left, four mistakes answered right today.
+    const states: Record<string, CardState> = {};
+    const mistakes: Mistake[] = [];
+    WORDS_B1.slice(0, 4).forEach((w) => {
+      states[w.id] = seen(NOW + DAY, { ok: 2, lapses: 1, last: NOW - 60_000 });
+      mistakes.push({ id: w.id, at: NOW - 3_600_000, given: 'x', expected: w.en, ex: 'type-en', cat: 'vocab' });
+    });
+    expect(planItems({ kind: 'daily' }, ctx({ states, mistakes, newLeft: 0 }))).toEqual([]);
+    // They are still there for the mistakes practice the learner opens on purpose.
+    expect(planItems({ kind: 'mistakes' }, ctx({ states, mistakes })).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('adds new words and reviews ahead when the learner wants more', () => {
+    const states: Record<string, CardState> = {};
+    const answeredToday = WORDS_B1.slice(0, 4);
+    const dueSoon = WORDS_B1.slice(4, 10);
+    const dueLater = WORDS_B1.slice(10, 16);
+    answeredToday.forEach((w) => (states[w.id] = seen(NOW + DAY, { last: NOW - 60_000 })));
+    dueSoon.forEach((w) => (states[w.id] = seen(NOW + DAY, { last: NOW - 2 * DAY })));
+    dueLater.forEach((w) => (states[w.id] = seen(NOW + 20 * DAY, { last: NOW - 2 * DAY })));
+    const plan = planItems({ kind: 'daily', more: true }, ctx({ states, newLeft: 5 }));
+    const ids = plan.map((i) => i.id);
+    expect(plan.filter((i) => !states[i.id])).toHaveLength(5);
+    expect(ids).toEqual(expect.arrayContaining(dueSoon.map((w) => w.id)));
+    expect(ids.some((id) => answeredToday.some((w) => w.id === id))).toBe(false);
+    expect(ids.some((id) => dueLater.some((w) => w.id === id))).toBe(false);
   });
 
   it('trains own words in the custom mode', () => {

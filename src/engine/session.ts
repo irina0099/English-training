@@ -1,5 +1,6 @@
 import type { CardState, Drill, ExerciseType, Grade, Item, Mistake, VocabItem, Verdict } from '../types';
 import { checkAnswer, normalize } from './check';
+import { DAY } from './fsrs';
 import { mistakesByCategory, mistakesByItem, isFixed } from './mistakes';
 import { pick, shuffle, type Rng } from './random';
 
@@ -23,7 +24,8 @@ export interface Task {
 }
 
 export type SessionMode =
-  | { kind: 'daily' }
+  /** `more`: extra practice once the day's plan is done — more new words and reviews ahead of time. */
+  | { kind: 'daily'; more?: boolean }
   | { kind: 'mistakes' }
   | { kind: 'custom' }
   | { kind: 'rule'; rule: string }
@@ -291,6 +293,16 @@ function freshOrder(items: readonly Item[], rng: Rng, weights: Map<string, numbe
 }
 
 /** Chooses which items go into a session. */
+/** Extra practice reviews ahead only what is due within this time. */
+const REVIEW_AHEAD = 3 * DAY;
+
+/** Midnight at the start of the learner's day, in local time. */
+function startOfDay(now: number): number {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 export function planItems(mode: SessionMode, ctx: SessionContext): Item[] {
   const { items, states, now, size } = ctx;
   const chosen: Item[] = [];
@@ -319,12 +331,23 @@ export function planItems(mode: SessionMode, ctx: SessionContext): Item[] {
 
   switch (mode.kind) {
     case 'daily': {
-      const weak = byWeight(items.filter((i) => states[i.id] && states[i.id].due > now && (weights.get(i.id) ?? 0) >= 0.4));
+      // An item answered today has had its practice: pulling it in again the same
+      // day only repeats the same few tasks. It comes back when it is due.
+      const today = startOfDay(now);
+      const notToday = (i: Item) => states[i.id].last < today;
+      const weak = byWeight(items.filter((i) => states[i.id] && states[i.id].due > now && notToday(i) && (weights.get(i.id) ?? 0) >= 0.4));
       take(due, Math.ceil(size * 0.6));
       take(weak, Math.ceil(size * 0.25));
       take(fresh, Math.min(ctx.newLeft, Math.max(Math.ceil(size * 0.15), size - chosen.length)));
       take(due, size);
       take(weak, size);
+      if (mode.more) {
+        // Review ahead: what would come back soonest.
+        const ahead = items
+          .filter((i) => states[i.id] && states[i.id].due > now && states[i.id].due - now < REVIEW_AHEAD && notToday(i))
+          .sort((a, b) => states[a.id].due - states[b.id].due);
+        take(ahead, size);
+      }
       break;
     }
     case 'mistakes': {

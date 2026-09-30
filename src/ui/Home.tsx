@@ -56,7 +56,7 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
             <span>{days === 1 ? 'day' : 'days'} in a row</span>
           </div>
         </div>
-        <button type="button" class="btn btn-primary btn-block" onClick={() => nav.startSession({ kind: 'daily' })}>
+        <button type="button" class="btn btn-primary btn-block" onClick={() => nav.startSession({ kind: 'daily', more: due + newLeft === 0 })}>
           {due + newLeft > 0 ? 'Start practice' : 'Practise more'}
         </button>
       </section>
