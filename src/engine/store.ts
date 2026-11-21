@@ -32,22 +32,85 @@ export function defaultData(): AppData {
 }
 
 const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+const num = (x: unknown, fallback = 0): number => (isNum(x) ? x : fallback);
+const isStr = (x: unknown): x is string => typeof x === 'string';
 
-/** Accepts saved or imported data and fills in anything missing. */
+/** Keeps the entries of a record that pass `fix`; `fix` returns null for one that can't be used. */
+function cleanRecord<T>(x: unknown, fix: (v: Record<string, unknown>) => T | null): Record<string, T> {
+  if (!isObject(x)) return {};
+  const out: Record<string, T> = {};
+  for (const [k, v] of Object.entries(x)) {
+    const ok = isObject(v) ? fix(v) : null;
+    if (ok) out[k] = ok;
+  }
+  return out;
+}
+
+const cleanCard = (c: Record<string, unknown>): CardState | null =>
+  isNum(c.due) && isNum(c.s) && c.s > 0 && isNum(c.d)
+    ? { due: c.due, s: c.s, d: c.d, reps: num(c.reps), lapses: num(c.lapses), last: num(c.last), ok: num(c.ok) }
+    : null;
+
+const cleanMistake = (m: unknown): Mistake | null =>
+  isObject(m) && isStr(m.id) && isNum(m.at)
+    ? {
+        id: m.id,
+        at: m.at,
+        given: isStr(m.given) ? m.given : '',
+        expected: isStr(m.expected) ? m.expected : '',
+        ex: (isStr(m.ex) ? m.ex : 'card') as Mistake['ex'],
+        cat: isStr(m.cat) ? m.cat : 'vocab',
+      }
+    : null;
+
+const cleanWord = (w: unknown): VocabItem | null =>
+  isObject(w) && isStr(w.id) && isStr(w.en) ? ({ ...w, ru: isStr(w.ru) ? w.ru : '' } as unknown as VocabItem) : null;
+
+/** Keeps the items of a list that `fix` can use. */
+const cleanList = <T>(x: unknown, fix: (v: unknown) => T | null): T[] =>
+  Array.isArray(x) ? x.map(fix).filter((v): v is T => v !== null) : [];
+
+const cleanDay = (d: Record<string, unknown>): DayStat | null =>
+  isNum(d.n) ? { n: d.n, ok: num(d.ok), new: num(d.new), ...(isNum(d.lessons) ? { lessons: d.lessons } : {}) } : null;
+
+const cleanRuleStat = (r: Record<string, unknown>) => (isNum(r.n) ? { n: r.n, e: num(r.e) } : null);
+
+/** A whole number within the range, or the default. */
+const intIn = (x: unknown, lo: number, hi: number, fallback: number) =>
+  isNum(x) && Number.isInteger(x) && x >= lo && x <= hi ? x : fallback;
+
+function cleanSettings(x: unknown): Settings {
+  const base = DEFAULT_SETTINGS;
+  const raw = isObject(x) ? x : {};
+  const levels = Array.isArray(raw.levels) ? raw.levels.filter((l): l is Level => l === 'B1' || l === 'B2') : [];
+  return {
+    ...raw,
+    levels: levels.length ? [...new Set(levels)] : [...base.levels],
+    sessionSize: intIn(raw.sessionSize, 1, 200, base.sessionSize),
+    newPerDay: intIn(raw.newPerDay, 0, 200, base.newPerDay),
+    autoSpeak: typeof raw.autoSpeak === 'boolean' ? raw.autoSpeak : base.autoSpeak,
+    showTranslations: typeof raw.showTranslations === 'boolean' ? raw.showTranslations : base.showTranslations,
+  };
+}
+
+/**
+ * Accepts saved, imported or synced data and fills in anything missing.
+ * Each entry is checked, so one broken card or mistake can't break the schedule or the screens.
+ */
 export function sanitize(raw: unknown): AppData {
   const base = defaultData();
   if (!isObject(raw)) return base;
-  const settings = isObject(raw.settings) ? { ...base.settings, ...raw.settings } : base.settings;
-  const levels = Array.isArray(settings.levels) ? settings.levels.filter((l): l is Level => l === 'B1' || l === 'B2') : [];
+  const stamps = isObject(raw.stamps) ? raw.stamps : {};
   return {
     v: 1,
-    states: isObject(raw.states) ? (raw.states as Record<string, CardState>) : {},
-    mistakes: Array.isArray(raw.mistakes) ? (raw.mistakes as Mistake[]) : [],
-    custom: Array.isArray(raw.custom) ? (raw.custom as VocabItem[]).filter((w) => isObject(w) && typeof w.en === 'string') : [],
-    settings: { ...settings, levels: levels.length ? levels : ['B1'] },
-    days: isObject(raw.days) ? (raw.days as Record<string, DayStat>) : {},
-    ruleStats: isObject(raw.ruleStats) ? (raw.ruleStats as AppData['ruleStats']) : {},
-    stamps: isObject(raw.stamps) ? { ...base.stamps, ...(raw.stamps as AppData['stamps']) } : base.stamps,
+    states: cleanRecord(raw.states, cleanCard),
+    mistakes: cleanList(raw.mistakes, cleanMistake),
+    custom: cleanList(raw.custom, cleanWord),
+    settings: cleanSettings(raw.settings),
+    days: cleanRecord(raw.days, cleanDay),
+    ruleStats: cleanRecord(raw.ruleStats, cleanRuleStat),
+    stamps: { progress: num(stamps.progress), mistakes: num(stamps.mistakes), words: num(stamps.words) },
   };
 }
 

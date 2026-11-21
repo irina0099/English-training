@@ -45,13 +45,29 @@ function pdfjs(): Promise<PdfJs> {
 const DB = 'english-notebook-files';
 const STORE = 'pdf';
 
+/** One connection for the whole app: a new one per request would pile up and block upgrades. */
+let conn: Promise<IDBDatabase> | null = null;
+
 function db(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  conn ??= new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const d = req.result;
+      // Another tab wants a newer version, or the browser closed it: open afresh next time.
+      d.onversionchange = () => {
+        d.close();
+        conn = null;
+      };
+      d.onclose = () => (conn = null);
+      resolve(d);
+    };
+    req.onerror = () => {
+      conn = null;
+      reject(req.error);
+    };
   });
+  return conn;
 }
 
 async function tx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
@@ -66,7 +82,12 @@ async function tx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRe
   });
 }
 
-export const deleteFile = (key: string) => tx('readwrite', (s) => s.delete(key));
+/** Removes a magazine's file from the device and from memory. */
+export async function deleteFile(key: string): Promise<void> {
+  await closeDoc(key);
+  inMemory.delete(key);
+  await tx('readwrite', (s) => s.delete(key));
+}
 
 // ——— Documents ———
 
@@ -92,8 +113,18 @@ async function step<T>(name: string, run: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Lets pdf.js free a document: its fonts and pictures take a lot of iPhone's memory. */
+async function closeDoc(key: string): Promise<void> {
+  const p = docs.get(key);
+  if (!p) return;
+  docs.delete(key);
+  await p.then((d) => d.destroy()).catch(() => {});
+}
+
 export function openDoc(key: string): Promise<PDFDocumentProxy> {
   if (!docs.has(key)) {
+    // One magazine open at a time: the one read before is closed (its file stays saved).
+    for (const other of [...docs.keys()]) void closeDoc(other);
     const p = (async () => {
       const kept = inMemory.get(key);
       const stored = kept ?? (await tx<ArrayBuffer | Blob | undefined>('readonly', (s) => s.get(key)));
@@ -103,7 +134,9 @@ export function openDoc(key: string): Promise<PDFDocumentProxy> {
       // pdf.js hands the bytes to its worker, so give it a copy and keep the original.
       return m.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise;
     })();
-    p.catch(() => docs.delete(key));
+    p.catch(() => {
+      if (docs.get(key) === p) docs.delete(key);
+    });
     docs.set(key, p);
   }
   return docs.get(key)!;
@@ -116,7 +149,7 @@ async function pageText(page: PDFPageProxy): Promise<string> {
 
 /** Saves the file and works out its contents: a known issue's map, the PDF's own outline, or page by page. */
 export async function importPdf(file: File, onStep: (text: string) => void): Promise<Issue> {
-  const key = `pdf-${Date.now().toString(36)}`;
+  const key = `pdf-${newId()}`;
   onStep('Loading the file…');
   // Raw bytes, not the File itself: Safari on iPhone often can't keep a File in IndexedDB.
   const buf = await step('read file', () => file.arrayBuffer());
@@ -128,6 +161,21 @@ export async function importPdf(file: File, onStep: (text: string) => void): Pro
     saved = false;
     inMemory.set(key, buf);
   }
+  try {
+    return await readIssue(key, file, saved, onStep);
+  } catch (e) {
+    // Not a PDF, or a broken one: don't leave its bytes behind where nobody can see them.
+    await deleteFile(key).catch(() => {});
+    throw e;
+  }
+}
+
+/** A random id; `crypto.randomUUID` needs https, which a phone testing over the local network lacks. */
+function newId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+async function readIssue(key: string, file: File, saved: boolean, onStep: (text: string) => void): Promise<Issue> {
   onStep('Reading the pages…');
   const doc = await step('open PDF', () => openDoc(key));
   const first = await step('read page 1', () => doc.getPage(1));
@@ -363,6 +411,9 @@ export class PdfView {
   destroy() {
     this.alive = false;
     for (const slot of this.slots) this.drop(slot);
+    // Frees what pdf.js keeps for each page (its drawing instructions, its text).
+    for (const page of this.pages) page.cleanup();
+    this.pages = [];
   }
 }
 

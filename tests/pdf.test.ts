@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { deleteFile, PdfView } from '../src/reading/pdf';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PdfView } from '../src/reading/pdf';
 
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 
@@ -16,14 +16,19 @@ function fakeSlot() {
 
 function fakePage(render: () => Promise<void>) {
   let renders = 0;
+  let cleaned = 0;
   const page = {
+    cleanup: () => {
+      cleaned++;
+      return true;
+    },
     getViewport: ({ scale }: { scale: number }) => ({ width: 600 * scale, height: 800 * scale, scale }),
     render: () => {
       renders++;
       return { promise: render() };
     },
   };
-  return { page, renders: () => renders };
+  return { page, renders: () => renders, cleaned: () => cleaned };
 }
 
 function viewWith(page: unknown) {
@@ -42,12 +47,13 @@ describe('PdfView', () => {
   it('stops trying a page that could not be turned into a picture', async () => {
     // Out of memory on iPhone: toBlob gives null. Async, so a runaway loop can't freeze the test.
     fakeDom((cb) => setTimeout(() => cb(null), 0));
-    const { page, renders } = fakePage(async () => {});
+    const { page, renders, cleaned } = fakePage(async () => {});
     const view = viewWith(page);
     view.show([1], 1200);
     await tick();
     expect(renders()).toBe(1);
     view.destroy();
+    expect(cleaned()).toBe(1);
   });
 
   it('survives a page that fails to render', async () => {
@@ -65,27 +71,80 @@ describe('PdfView', () => {
   });
 });
 
+/** IndexedDB in memory. Requests succeed first and transactions finish after, as in browsers. */
+function fakeIdb(opts: { abortWrites?: boolean; loseFiles?: boolean } = {}) {
+  const files = new Map<string, unknown>();
+  let opens = 0;
+  const later = (f: () => void) => setTimeout(f, 0);
+  const database = {
+    transaction: () => {
+      const t: Record<string, unknown> = {};
+      const run = (req: Record<string, unknown>, result: unknown, write: boolean, apply = () => {}) => {
+        later(() => {
+          req.result = result;
+          (req.onsuccess as () => void)?.();
+          later(() => {
+            if (write && opts.abortWrites) {
+              t.error = new DOMException('full', 'QuotaExceededError');
+              (t.onabort as () => void)?.();
+            } else {
+              apply();
+              (t.oncomplete as () => void)?.();
+            }
+          });
+        });
+        return req;
+      };
+      t.objectStore = () => ({
+        put: (v: unknown, k: string) => run({}, k, true, () => files.set(k, v)),
+        get: (k: string) => run({}, opts.loseFiles ? undefined : files.get(k), false),
+        delete: (k: string) => run({}, undefined, true, () => files.delete(k)),
+      });
+      return t;
+    },
+  };
+  (globalThis as unknown as { indexedDB: unknown }).indexedDB = {
+    open: () => {
+      opens++;
+      const req: Record<string, unknown> = { result: database };
+      later(() => (req.onsuccess as () => void)());
+      return req;
+    },
+  };
+  return { files, opens: () => opens };
+}
+
+/** A fresh copy of the module, so its database connection doesn't carry over between tests. */
+async function freshPdf() {
+  vi.resetModules();
+  return import('../src/reading/pdf');
+}
+
+const pdfFile = (name = 'Issue_12.pdf') => ({ name, arrayBuffer: async () => new ArrayBuffer(8) }) as unknown as File;
+
 describe('file storage', () => {
   it('reports a failure when the transaction aborts after the request succeeded', async () => {
     // What Safari does when there is no room left: the request succeeds, the commit doesn't.
-    const t: Record<string, ((...a: unknown[]) => void) | unknown> = { error: new DOMException('full', 'QuotaExceededError') };
-    const req: Record<string, unknown> = { result: undefined };
-    t.objectStore = () => ({
-      delete: () => {
-        setTimeout(() => {
-          (req.onsuccess as () => void)?.();
-          setTimeout(() => (t.onabort as () => void)?.(), 0);
-        }, 0);
-        return req;
-      },
-    });
-    const open: Record<string, unknown> = { result: { transaction: () => t } };
-    (globalThis as unknown as { indexedDB: unknown }).indexedDB = {
-      open: () => {
-        setTimeout(() => (open.onsuccess as () => void)(), 0);
-        return open;
-      },
-    };
+    fakeIdb({ abortWrites: true });
+    const { deleteFile } = await freshPdf();
     await expect(deleteFile('k')).rejects.toThrow('full');
+  });
+
+  it('removes the saved file when the magazine cannot be read', async () => {
+    const idb = fakeIdb({ loseFiles: true });
+    const { importPdf, ImportError } = await freshPdf();
+    const result = importPdf(pdfFile(), () => {});
+    await expect(result).rejects.toBeInstanceOf(ImportError);
+    await expect(result).rejects.toThrow('open PDF');
+    expect(idb.files.size).toBe(0);
+  });
+
+  it('opens the database once for many requests', async () => {
+    const idb = fakeIdb();
+    const { deleteFile } = await freshPdf();
+    await deleteFile('a');
+    await deleteFile('b');
+    await deleteFile('c');
+    expect(idb.opens()).toBe(1);
   });
 });

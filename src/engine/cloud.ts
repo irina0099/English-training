@@ -29,6 +29,9 @@ export type CloudStatus = 'local' | 'connecting' | 'synced' | 'error';
 
 const SECTIONS: Section[] = ['progress', 'mistakes', 'words'];
 const WRITE_DELAY = 1500;
+/** After a failed write: try again in 5 s, then 10, 20… up to a minute. */
+const RETRY_DELAY = 5000;
+const MAX_RETRY_DELAY = 60_000;
 
 function payload(d: AppData, s: Section): Record<string, unknown> {
   switch (s) {
@@ -82,16 +85,31 @@ export async function startCloudSync(onStatus: (s: CloudStatus) => void): Promis
     let ready = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let chain = Promise.resolve();
+    let retries = 0;
     const flush = () => {
       clearTimeout(timer);
       const sections = [...pending];
       pending.clear();
-      chain = chain
-        .then(async () => {
-          for (const s of sections) await write(s);
+      chain = chain.then(async () => {
+        let failed = false;
+        for (const s of sections) {
+          try {
+            await write(s);
+          } catch {
+            // Kept for the next try: otherwise it would only go again after another change.
+            pending.add(s);
+            failed = true;
+          }
+        }
+        if (failed) {
+          onStatus('error');
+          clearTimeout(timer);
+          timer = setTimeout(flush, Math.min(MAX_RETRY_DELAY, RETRY_DELAY * 2 ** retries++));
+        } else {
+          retries = 0;
           onStatus('synced');
-        })
-        .catch(() => onStatus('error'));
+        }
+      });
     };
     off = onLocalChange((_d, sections) => {
       sections.forEach((s) => pending.add(s));
@@ -124,10 +142,10 @@ export async function startCloudSync(onStatus: (s: CloudStatus) => void): Promis
       }
     }
     if (next !== getData()) replaceData(next);
-    for (const s of toWrite) await write(s);
     ready = true;
-    onStatus('synced');
+    toWrite.forEach((s) => pending.add(s));
     if (pending.size) flush();
+    else onStatus('synced');
   } catch {
     off?.();
     onStatus('error');
