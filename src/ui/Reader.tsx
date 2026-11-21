@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { saveCustomWord } from '../engine/store';
 import { createCustomWord, sameWord } from '../engine/words';
-import { ISSUES_BY_ID } from '../reading/issues';
 import { define, findKnown, googleTranslateUrl, lemmaCandidates, translate, type Definition } from '../reading/lookup';
-import { getReading, markRead, notesOf, setLast, subscribeReading, updateNotes } from '../reading/store';
+import { getIssue, getReading, markRead, notesOf, setLast, subscribeReading, updateNotes } from '../reading/store';
+import { layoutPdf } from '../reading/pdf';
 import { boxesFor, indexText, offsetAt, sentenceAround, wordAt, type Box, type TextIndex } from '../reading/text';
 import { PAGE_WIDTH, type Highlight, type HighlightColor, type PageNotes, type Stroke, type TextNote, type Tool } from '../reading/types';
 import { speak } from '../tts';
@@ -39,7 +39,7 @@ const INKS = ['#1c1c1e', '#0a62d0', '#d7263d', '#1f9d55', '#f2b705'];
 const WIDTHS = { pen: [1.6, 3, 5], pencil: [1.2, 2.2, 3.4], marker: [10, 16, 24] } as const;
 
 export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; pageId: string; focus?: number; onClose: () => void }) {
-  const issue = ISSUES_BY_ID[issueId];
+  const issue = getIssue(issueId)!;
   const [page, setPage] = useState(pageId);
   const index = Math.max(0, issue.pages.findIndex((p) => p.id === page));
   const mp = issue.pages[index];
@@ -60,6 +60,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
   viewRef.current = view;
   const [fit, setFit] = useState(1);
   const [layoutTick, setLayoutTick] = useState(0);
+  const [loadError, setLoadError] = useState(false);
 
   const [sel, setSel] = useState<Selection | null>(null);
   const [menu, setMenu] = useState<'main' | 'colors'>('main');
@@ -85,13 +86,23 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
   useLayoutEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-    el.innerHTML = mp.html;
-    idxRef.current = indexText(el);
+    let alive = true;
     const measure = () => {
+      if (!alive) return;
       const h = el.offsetHeight;
       setHeight(h);
       setLayoutTick((t) => t + 1);
     };
+    el.innerHTML = mp.pdf ? '' : mp.html;
+    idxRef.current = indexText(el);
+    setLoadError(false);
+    if (mp.pdf && issue.file) {
+      // Printed pages: pictures of the pages with the words laid invisibly on top.
+      layoutPdf(el, issue.file, mp.pdf.from, mp.pdf.to, () => alive, () => {
+        idxRef.current = indexText(el);
+        measure();
+      }).catch(() => alive && setLoadError(true));
+    }
     measure();
     const v = fitView();
     setFit(v.s);
@@ -104,7 +115,11 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
     document.fonts?.ready.then(measure);
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      alive = false;
+      ro.disconnect();
+      for (const img of el.querySelectorAll('img')) URL.revokeObjectURL(img.src);
+    };
   }, [issueId, mp.id]);
 
   useEffect(() => {
@@ -150,8 +165,10 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
   // Finishing the page: reaching its end counts as read.
   useEffect(() => {
     const vp = viewportRef.current;
-    if (!vp || notes.read) return;
-    if (view.y + height * view.s <= vp.clientHeight + 40) markRead(issueId, mp.id);
+    if (!vp || notes.read || !idxRef.current?.text.trim()) return;
+    // Only once the learner has scrolled to the end, or the whole article fits and she looked at it.
+    const atEnd = view.y + height * view.s <= vp.clientHeight + 40;
+    if (atEnd && (g.moved || g.pointers.size === 0) && layoutTick > 1 && g.startT > 0) markRead(issueId, mp.id);
   }, [view, height]);
 
   // ——— Annotations ———
@@ -192,6 +209,9 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
     return out;
   }, [d.custom, layoutTick, idx, mp.id]);
 
+  const collapseTimer = useRef(0);
+  const [barColors, setBarColors] = useState(false);
+  useEffect(() => setBarColors(false), [sel?.native]);
   const clearSel = () => {
     if (sel?.native) window.getSelection()?.removeAllRanges();
     setSel(null);
@@ -206,7 +226,10 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       const el = contentRef.current;
       const ix = idxRef.current;
       if (!s || !el || !ix || s.isCollapsed || !s.rangeCount) {
-        setSel((cur) => (cur?.native ? null : cur));
+        // Tapping the bar below can clear iPhone's selection a moment before the
+        // tap lands; keep the words for a short while so the button still works.
+        clearTimeout(collapseTimer.current);
+        collapseTimer.current = window.setTimeout(() => setSel((cur) => (cur?.native ? null : cur)), 450);
         return;
       }
       const r = s.getRangeAt(0);
@@ -216,7 +239,10 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       if (!a || !b) return;
       const start = a.start + r.startOffset;
       const end = b.start + r.endOffset;
-      if (end > start) setSel({ start, end, native: true });
+      if (end > start) {
+        clearTimeout(collapseTimer.current);
+        setSel({ start, end, native: true });
+      }
     };
     document.addEventListener('selectionchange', onChange);
     return () => document.removeEventListener('selectionchange', onChange);
@@ -621,8 +647,13 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
         onPointerCancel={onUp}
         onContextMenu={(e) => e.preventDefault()}
       >
+        {loadError && (
+          <div class="reader-error">
+            <p>This magazine’s file isn’t on this device any more. Add the PDF again in Read.</p>
+          </div>
+        )}
         <div class="paper" ref={paperRef} style={{ width: `${PAGE_WIDTH}px`, transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})` }}>
-          <div class={`mag ${issue.theme}`} ref={contentRef} />
+          <div class={`mag ${issue.theme}`} ref={contentRef} lang="en" />
           <div class="paper-layer" aria-hidden="true">
             {hlBoxes.map(({ h, boxes }) =>
               boxes.map((b, i) => <i key={`${h.id}-${i}`} class={`hl hl-${h.color}`} style={{ left: b.x - 1, top: b.y, width: b.w + 2, height: b.h }} />),
@@ -722,28 +753,46 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
           </div>
         </div>
       ) : sel?.native ? (
-        <div class="sel-bar" role="toolbar" aria-label="Selected text">
-          <div class="swatches">
-            {COLORS.map((c) => (
-              <button type="button" key={c} class={`swatch sw-${c}`} aria-label={`Highlight ${c}`} onClick={() => addHighlight(c)} />
-            ))}
-          </div>
-          <button type="button" class="btn btn-sm btn-primary" onClick={() => openSheet('add')}>
-            Add to Words
-          </button>
-          <button type="button" class="icon-btn" aria-label="Speak" onClick={() => speak(selText)}>
-            <IconSpeaker size={20} />
-          </button>
+        <div class="sel-bar" role="toolbar" aria-label="Selected text" onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()}>
+          {barColors ? (
+            <div class="swatches">
+              {COLORS.map((c) => (
+                <button type="button" key={c} class={`swatch sw-${c}`} aria-label={`Highlight ${c}`} onClick={() => addHighlight(c)} />
+              ))}
+              <button type="button" class="bar-btn" onClick={() => setBarColors(false)}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              <button type="button" class="bar-btn" onClick={() => setBarColors(true)}>
+                <i class="bar-hl" aria-hidden="true" />
+                Highlight
+              </button>
+              <button type="button" class="bar-btn" onClick={() => openSheet('lookup')}>
+                Look Up
+              </button>
+              <button type="button" class="bar-btn" onClick={() => openSheet('translate')}>
+                Translate
+              </button>
+              <button type="button" class="bar-btn strong" onClick={() => openSheet('add')}>
+                + Words
+              </button>
+              <button type="button" class="bar-btn" aria-label="Speak" onClick={() => speak(selText)}>
+                <IconSpeaker size={20} />
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div class="reader-foot">
           <button type="button" class="pager" disabled={index === 0} onClick={() => go(-1)}>
             <IconChevron size={16} style={{ transform: 'rotate(180deg)' }} />
-            {issue.pages[index - 1]?.topic ?? ''}
+            <span class="pager-label">{issue.pages[index - 1]?.title ?? ''}</span>
           </button>
-          <span class={`read-state ${notes.read ? 'is-read' : ''}`}>{notes.read ? 'Read ✓' : sysMenu ? 'Hold a word: Look Up, Translate' : 'Hold a word to look it up'}</span>
+          <span class={`read-state ${notes.read ? 'is-read' : ''}`}>{notes.read ? 'Read ✓' : 'Hold a word'}</span>
           <button type="button" class="pager" disabled={index === issue.pages.length - 1} onClick={() => go(1)}>
-            {issue.pages[index + 1]?.topic ?? ''}
+            <span class="pager-label">{issue.pages[index + 1]?.title ?? ''}</span>
             <IconChevron size={16} />
           </button>
         </div>

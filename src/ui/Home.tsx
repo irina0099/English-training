@@ -3,8 +3,7 @@ import type { CloudStatus } from '../engine/cloud';
 import { CAMPS, climbOf, PEAKS } from '../engine/climb';
 import { isFixed, mistakesByItem } from '../engine/mistakes';
 import { dueCount, newLeftToday, progressOf, streak, studyItems, todayKey, unseenCount } from '../engine/store';
-import { ISSUES_BY_ID } from '../reading/issues';
-import { pagesRead } from '../reading/store';
+import { getIssue, pagesRead } from '../reading/store';
 import { Modal, Row } from './common';
 import { useNav } from './context';
 import { useData } from './hooks';
@@ -34,7 +33,7 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
   const climb = climbOf(d, pages);
   const [showClimb, setShowClimb] = useState(false);
   const words = progressOf([...studyItems(d)].filter((i) => i.kind !== 'drill'), d.states);
-  const last = reading.last && ISSUES_BY_ID[reading.last.issue];
+  const last = reading.last && getIssue(reading.last.issue);
   const lastPage = last?.pages.find((p) => p.id === reading.last!.page);
   const date = new Date(now).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   const goal = d.settings.sessionSize;

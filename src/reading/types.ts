@@ -8,6 +8,8 @@ export interface MagPage {
   dek?: string;
   /** The page itself: HTML laid out at PAGE_WIDTH pixels, styled by the issue's theme class. */
   html: string;
+  /** For a magazine added as a PDF: the PDF pages of this article, from 1. */
+  pdf?: { from: number; to: number };
 }
 
 export interface Issue {
@@ -19,6 +21,11 @@ export interface Issue {
   theme: string;
   cover: { bg: string; fg: string; accent: string };
   pages: MagPage[];
+  /** A magazine the learner added: the PDF is kept on this device under this key. */
+  file?: string;
+  /** Small picture of the cover, as a data URL. */
+  thumb?: string;
+  addedAt?: number;
 }
 
 /** Pages are laid out at this width, like a printed page, and scaled to the screen. */

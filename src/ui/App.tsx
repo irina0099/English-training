@@ -11,6 +11,7 @@ import { Games, type GameId } from './Games';
 import { Home } from './Home';
 import { useData } from './hooks';
 import { IconBook, IconHome, IconNews, IconPen, IconRule } from './icons';
+import { getIssue } from '../reading/store';
 import { Library } from './Library';
 import { Reader } from './Reader';
 import { Mistakes } from './Mistakes';
@@ -101,7 +102,7 @@ export function App() {
   return (
     <NavContext.Provider value={nav}>
       <div class="shell">
-        {tab === 'read' && reader ? (
+        {tab === 'read' && reader && getIssue(reader.issue) ? (
           // The page opens inside the app, above the tab bar, not as a separate screen.
           <Reader key={reader.key} issueId={reader.issue} pageId={reader.page} focus={reader.focus} onClose={() => setReader(null)} />
         ) : (

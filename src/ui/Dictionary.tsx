@@ -8,7 +8,7 @@ import { deleteCustomWord, getData, MAX_CUSTOM_WORDS, saveCustomWord, saveCustom
 import { createCustomWord, markTarget, parseBulk, sameWord, type WordDraft } from '../engine/words';
 import type { Level, VocabItem } from '../types';
 import { ConfirmButton, count, dueLabel, LevelChip, Modal, StageDot, WordCard } from './common';
-import { ISSUES_BY_ID } from '../reading/issues';
+import { getIssue } from '../reading/store';
 import { useNav } from './context';
 import { useData } from './hooks';
 import { IconChevron, IconPlus, IconSearch } from './icons';
@@ -368,7 +368,7 @@ function bySource(words: VocabItem[]): [string, VocabItem[]][] {
   const groups = new Map<string, VocabItem[]>();
   for (const w of words) {
     const c = w.ctx![0];
-    const page = ISSUES_BY_ID[c.issue]?.pages.find((p) => p.id === c.page);
+    const page = getIssue(c.issue)?.pages.find((p) => p.id === c.page);
     const title = page ? page.title : 'Other';
     groups.set(title, [...(groups.get(title) ?? []), w]);
   }
@@ -382,7 +382,7 @@ function Contexts({ word }: { word: VocabItem }) {
     <div class="contexts stack-sm">
       <p class="eyebrow">Met while reading</p>
       {word.ctx!.map((c, i) => {
-        const iss = ISSUES_BY_ID[c.issue];
+        const iss = getIssue(c.issue);
         const page = iss?.pages.find((p) => p.id === c.page);
         return (
           <button type="button" class="context" key={i} onClick={() => iss && page && nav.openReader(iss.id, page.id, c.at)}>

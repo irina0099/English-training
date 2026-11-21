@@ -1,4 +1,5 @@
-import type { PageNotes } from './types';
+import { ISSUES } from './issues';
+import type { Issue, PageNotes } from './types';
 
 // Highlights, Markup and reading progress live in their own storage key, so the
 // main progress (and its cloud sync) stays as it was. Words saved while reading
@@ -12,6 +13,8 @@ export interface ReadingData {
   last?: { issue: string; page: string };
   /** Holding a word shows iPhone's own menu (Look Up, Translate) or the app's menu. */
   menu?: 'system' | 'app';
+  /** Magazines added from PDF files (the files themselves are in IndexedDB). */
+  issues?: Issue[];
 }
 
 const empty = (): ReadingData => ({ pages: {} });
@@ -75,4 +78,22 @@ export function pagesRead(d: ReadingData = data): number {
 
 export function setMenuStyle(menu: 'system' | 'app') {
   save({ ...data, menu });
+}
+
+/** The learner's own magazines first, newest first, then the demo issue. */
+export function allIssues(d: ReadingData = data): Issue[] {
+  return [...(d.issues ?? []).slice().sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0)), ...ISSUES];
+}
+
+export function getIssue(id: string): Issue | undefined {
+  return allIssues().find((i) => i.id === id);
+}
+
+export function addIssue(issue: Issue) {
+  save({ ...data, issues: [...(data.issues ?? []), issue], last: { issue: issue.id, page: issue.pages[0].id } });
+}
+
+export function removeIssue(id: string) {
+  const pages = Object.fromEntries(Object.entries(data.pages).filter(([k]) => !k.startsWith(`${id}/`)));
+  save({ ...data, pages, issues: (data.issues ?? []).filter((i) => i.id !== id), last: data.last?.issue === id ? undefined : data.last });
 }

@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'preact/hooks';
-import { ISSUES, ISSUES_BY_ID } from '../reading/issues';
-import { getReading, notesOf, setMenuStyle, subscribeReading } from '../reading/store';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { deleteFile, importPdf } from '../reading/pdf';
+import { addIssue, allIssues, getIssue, getReading, notesOf, removeIssue, setMenuStyle, subscribeReading } from '../reading/store';
+import type { Issue, MagPage } from '../reading/types';
+import { ConfirmButton } from './common';
 import { useNav } from './context';
 import { useData } from './hooks';
-import { IconCheck, IconChevron } from './icons';
+import { IconCheck, IconChevron, IconPlus } from './icons';
 
 export function useReading() {
   const [, bump] = useState(0);
@@ -11,89 +13,92 @@ export function useReading() {
   return getReading();
 }
 
+/** Articles grouped by the magazine's sections, in the order they first appear. */
+function byTopic(pages: MagPage[]): [string, MagPage[]][] {
+  const groups = new Map<string, MagPage[]>();
+  for (const p of pages) groups.set(p.topic, [...(groups.get(p.topic) ?? []), p]);
+  return [...groups];
+}
+
 export function Library() {
   const r = useReading();
   const d = useData();
   const nav = useNav();
-  const last = r.last && ISSUES_BY_ID[r.last.issue];
+  const issues = allIssues(r);
+  const last = r.last && getIssue(r.last.issue);
   const lastPage = last?.pages.find((p) => p.id === r.last!.page);
-  const highlights = ISSUES.flatMap((iss) =>
-    iss.pages.flatMap((p) => notesOf(iss.id, p.id).hl.map((h) => ({ h, iss, p }))),
-  ).sort((a, b) => b.h.at - a.h.at);
+  const highlights = issues
+    .flatMap((iss) => iss.pages.flatMap((p) => notesOf(iss.id, p.id).hl.map((h) => ({ h, iss, p }))))
+    .sort((a, b) => b.h.at - a.h.at);
   const savedFromReading = d.custom.filter((w) => w.ctx?.length).length;
   const menu = r.menu ?? 'system';
+  const [open, setOpen] = useState<string | null>(() => issues[0]?.id ?? null);
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [step, setStep] = useState('');
+  const [error, setError] = useState('');
+
+  const onFile = async (file: File | undefined) => {
+    if (!file) return;
+    setError('');
+    try {
+      const issue = await importPdf(file, setStep);
+      addIssue(issue);
+      setOpen(issue.id);
+    } catch {
+      setError('Couldn’t open this file. Check that it is a PDF and try again.');
+    } finally {
+      setStep('');
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
 
   return (
     <div class="page">
       <div class="page-head">
         <div class="stack-sm">
           <h1 class="title">Read</h1>
-          <p class="subtitle">Magazines page by page. Hold a word to look it up or save it.</p>
+          <p class="subtitle">Your magazines, article by article. Hold a word to look it up or save it.</p>
         </div>
+        <button type="button" class="icon-btn" onClick={() => fileRef.current?.click()} aria-label="Add a magazine" title="Add a magazine (PDF)">
+          <IconPlus size={22} />
+        </button>
       </div>
+      <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => onFile(e.currentTarget.files?.[0])} />
+
+      {step && (
+        <div class="sheet import-progress" role="status">
+          <span class="spinner" aria-hidden="true" />
+          <span>{step}</span>
+        </div>
+      )}
+      {error && <p class="error">{error}</p>}
 
       {last && lastPage && (
         <button type="button" class="sheet continue" onClick={() => nav.openReader(last.id, lastPage.id)}>
           <span class="eyebrow">Continue reading</span>
           <b>{lastPage.title}</b>
           <span class="muted small">
-            {last.magazine} {last.issue} · {lastPage.topic}
+            {[last.magazine, last.issue, lastPage.topic].filter(Boolean).join(' · ')}
           </span>
         </button>
       )}
 
-      {ISSUES.map((iss) => {
-        const read = iss.pages.filter((p) => notesOf(iss.id, p.id).read).length;
-        return (
-          <section class="section" key={iss.id} aria-label={`${iss.magazine} ${iss.issue}`}>
-            <div class="issue-card sheet">
-              <button
-                type="button"
-                class="cover-tile"
-                style={{ '--c-bg': iss.cover.bg, '--c-fg': iss.cover.fg, '--c-ac': iss.cover.accent } as Record<string, string>}
-                onClick={() => nav.openReader(iss.id, iss.pages[0].id)}
-                aria-label={`Open the cover of ${iss.magazine}`}
-              >
-                <span class="cover-name">{iss.magazine}</span>
-                <span class="cover-no">{iss.issue}</span>
-                <span class="cover-head">{iss.pages[1]?.title}</span>
-              </button>
-              <div class="issue-info">
-                <b>
-                  {iss.magazine} {iss.issue}
-                </b>
-                <span class="muted small">{iss.date}</span>
-                <div class="bar" role="img" aria-label={`${read} of ${iss.pages.length} pages read`}>
-                  <i class="known" style={{ width: `${(read / iss.pages.length) * 100}%` }} />
-                </div>
-                <span class="muted small">
-                  {read} of {iss.pages.length} pages read
-                </span>
-              </div>
-            </div>
-            <div class="list">
-              {iss.pages.map((p) => {
-                const n = notesOf(iss.id, p.id);
-                const words = d.custom.filter((w) => w.ctx?.some((c) => c.issue === iss.id && c.page === p.id)).length;
-                const marks = n.hl.length + n.strokes.length + n.texts.length;
-                return (
-                  <button type="button" class="list-item page-row" key={p.id} onClick={() => nav.openReader(iss.id, p.id)}>
-                    <span class={`topic topic-${p.topic.toLowerCase()}`}>{p.topic}</span>
-                    <span class="list-item-main">
-                      <b>{p.title}</b>
-                      <span>
-                        {[p.dek, words ? `${words} saved ${words === 1 ? 'word' : 'words'}` : '', marks ? `${marks} notes` : ''].filter(Boolean).join(' · ')}
-                      </span>
-                    </span>
-                    {n.read && <IconCheck class="check" size={18} />}
-                    <IconChevron class="chevron" />
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        );
-      })}
+      {!issues.some((i) => i.file) && (
+        <button type="button" class="sheet add-mag" onClick={() => fileRef.current?.click()}>
+          <span class="add-mag-icon" aria-hidden="true">
+            <IconPlus size={22} />
+          </span>
+          <span>
+            <b>Add a magazine</b>
+            <span class="muted small">Choose a PDF from Files. It stays on this phone and keeps its own pictures and layout.</span>
+          </span>
+        </button>
+      )}
+
+      {issues.map((iss) => (
+        <IssueBlock key={iss.id} iss={iss} open={open === iss.id} onToggle={() => setOpen(open === iss.id ? null : iss.id)} />
+      ))}
 
       {highlights.length > 0 && (
         <section class="section">
@@ -134,8 +139,86 @@ export function Library() {
 
       <p class="footnote">
         {savedFromReading ? `${savedFromReading} words saved from reading are in Words → From reading. ` : ''}
-        This is a demo issue. Send your magazines (PDF or photos) and each one will appear here, split into pages by topic, with its own fonts, pictures and layout.
+        Magazines you add are kept only on this device. Known issues are split into sections and articles automatically; others are split by their bookmarks or page by page.
       </p>
     </div>
+  );
+}
+
+function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onToggle: () => void }) {
+  const nav = useNav();
+  const d = useData();
+  const read = iss.pages.filter((p) => notesOf(iss.id, p.id).read).length;
+  const groups = byTopic(iss.pages);
+  return (
+    <section class="section" aria-label={`${iss.magazine} ${iss.issue}`}>
+      <div class="issue-card sheet">
+        {iss.thumb ? (
+          <button type="button" class="cover-img" onClick={() => nav.openReader(iss.id, iss.pages[0].id)} aria-label={`Open ${iss.magazine}`}>
+            <img src={iss.thumb} alt="" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            class="cover-tile"
+            style={{ '--c-bg': iss.cover.bg, '--c-fg': iss.cover.fg, '--c-ac': iss.cover.accent } as Record<string, string>}
+            onClick={() => nav.openReader(iss.id, iss.pages[0].id)}
+            aria-label={`Open the cover of ${iss.magazine}`}
+          >
+            <span class="cover-name">{iss.magazine}</span>
+            <span class="cover-no">{iss.issue}</span>
+            <span class="cover-head">{iss.pages[1]?.title}</span>
+          </button>
+        )}
+        <div class="issue-info">
+          <b>{[iss.magazine, iss.issue].filter(Boolean).join(' ')}</b>
+          <span class="muted small">{iss.file ? `${iss.pages.length} articles` : 'Demo issue'}</span>
+          <div class="bar" role="img" aria-label={`${read} of ${iss.pages.length} read`}>
+            <i class="known" style={{ width: `${(read / iss.pages.length) * 100}%` }} />
+          </div>
+          <span class="muted small">
+            {read} of {iss.pages.length} read
+          </span>
+          <button type="button" class="link small" style={{ alignSelf: 'flex-start' }} aria-expanded={open} onClick={onToggle}>
+            {open ? 'Hide contents' : 'Show contents'}
+          </button>
+        </div>
+      </div>
+      {open &&
+        groups.map(([topic, pages]) => (
+          <div class="stack-sm" key={topic}>
+            {groups.length > 1 && <p class="section-title">{topic}</p>}
+            <div class="list">
+              {pages.map((p) => {
+                const n = notesOf(iss.id, p.id);
+                const words = d.custom.filter((w) => w.ctx?.some((c) => c.issue === iss.id && c.page === p.id)).length;
+                const marks = n.hl.length + n.strokes.length + n.texts.length;
+                const where = p.pdf ? (p.pdf.from === p.pdf.to ? `p. ${p.pdf.from}` : `pp. ${p.pdf.from}–${p.pdf.to}`) : '';
+                return (
+                  <button type="button" class="list-item page-row" key={p.id} onClick={() => nav.openReader(iss.id, p.id)}>
+                    <span class="list-item-main">
+                      <b>{p.title}</b>
+                      <span>{[p.dek, where, words ? `${words} saved ${words === 1 ? 'word' : 'words'}` : '', marks ? `${marks} notes` : ''].filter(Boolean).join(' · ')}</span>
+                    </span>
+                    {n.read && <IconCheck class="check" size={18} />}
+                    <IconChevron class="chevron" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      {open && iss.file && (
+        <ConfirmButton
+          class="btn btn-sm btn-ghost"
+          label="Remove this magazine"
+          confirmLabel="Remove it and its notes"
+          onConfirm={() => {
+            removeIssue(iss.id);
+            deleteFile(iss.file!).catch(() => {});
+          }}
+        />
+      )}
+    </section>
   );
 }
