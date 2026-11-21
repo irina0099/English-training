@@ -30,6 +30,8 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
   const order = useMemo(() => issue.pages.slice().sort((a, b) => (a.pdf?.from ?? 0) - (b.pdf?.from ?? 0)), [issue]);
   const [article, setArticle] = useState(pageId);
   const index = Math.max(0, order.findIndex((p) => p.id === article));
+  // The section is worth showing in the contents only when the magazine has several.
+  const sections = useMemo(() => new Set(order.map((p) => p.topic)).size > 1, [order]);
   const mp = order[index];
 
   const [, bump] = useState(0);
@@ -608,7 +610,7 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
                 <span class="list-item-main">
                   <b>{a.title}</b>
                   <span>
-                    {a.topic} · {a.pdf && (a.pdf.from === a.pdf.to ? `p. ${a.pdf.from}` : `pp. ${a.pdf.from}–${a.pdf.to}`)}
+                    {[sections ? a.topic : '', a.pdf ? (a.pdf.from === a.pdf.to ? `p. ${a.pdf.from}` : `pp. ${a.pdf.from}–${a.pdf.to}`) : ''].filter(Boolean).join(' · ')}
                   </span>
                 </span>
                 {notesOf(issueId, a.id).read && <IconCheck class="check" size={18} />}
