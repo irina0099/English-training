@@ -84,8 +84,10 @@ export function parseBulk(text: string, level: Level | null): BulkResult {
   text.split(/\r?\n/).forEach((raw, i) => {
     const line = raw.trim();
     if (!line) return;
+    // One kind of separator per line: with dashes, a ";" or "|" inside the example stays in it.
+    const sep = /\s[—–-]\s/.test(line) ? /\s+[—–-]\s+/ : /\t/.test(line) ? /\t+/ : /\s*[;|]\s*/;
     const parts = line
-      .split(/\s+[—–-]\s+|\t+|\s*;\s*|\s*\|\s*/)
+      .split(sep)
       .map((p) => p.trim())
       .filter(Boolean);
     if (parts.length < 2) {

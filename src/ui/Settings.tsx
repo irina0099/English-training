@@ -66,11 +66,9 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
     try {
       const next = importJson(text);
       const parsed = JSON.parse(text) as { reading?: unknown };
-      // Synced progress is replaced on every device: ask first.
-      if (cloud === 'synced') {
-        setPending({ next, reading: parsed.reading });
-        setMessage('');
-      } else apply({ next, reading: parsed.reading });
+      // Restoring replaces the progress there is now (on every device, when synced): ask first.
+      setPending({ next, reading: parsed.reading });
+      setMessage('');
     } catch (e) {
       setMessage(e instanceof BackupError ? e.message : 'Couldn’t read the backup. Check that you copied all of the text.');
     }
@@ -201,7 +199,11 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
         </button>
         {pending && (
           <div class="stack-sm">
-            <p class="footnote">The backup will replace your progress on every device that uses this account, including anything newer than the backup.</p>
+            <p class="footnote">
+              {cloud === 'synced'
+                ? 'The backup will replace your progress on every device that uses this account, including anything newer than the backup.'
+                : 'The backup will replace the progress in this browser, including anything newer than the backup.'}
+            </p>
             <div class="row">
               <button type="button" class="btn btn-danger" style={{ flex: 1 }} onClick={() => apply(pending)}>
                 Replace my progress

@@ -4,6 +4,7 @@ import { annotatedPdf, shareFile } from '../reading/exportpdf';
 import { deleteFile, ImportError, importPdf, loadThumb, redetect } from '../reading/pdf';
 import { addIssue, allIssues, articleAt, getIssue, getReading, notesOf, placeOf, resumeOf, seenPages, setMenuStyle, subscribeReading, updateIssuePages } from '../reading/store';
 import type { Issue, MagPage } from '../reading/types';
+import { count } from './common';
 import { useNav } from './context';
 import { useData } from './hooks';
 import { IconCheck, IconChevron, IconPlus } from './icons';
@@ -170,7 +171,7 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
   // A PDF magazine counts printed pages read (they move the climb); the demo counts articles.
   const total = iss.file ? Math.max(...iss.pages.map((p) => p.pdf?.to ?? 1)) : iss.pages.length;
   const read = iss.file ? seenPages(iss.id).length : iss.pages.filter((p) => notesOf(iss.id, p.id).read).length;
-  const unit = iss.file ? 'pages' : 'articles';
+  const unit = iss.file ? (total === 1 ? 'page' : 'pages') : total === 1 ? 'article' : 'articles';
   const groups = byTopic(iss.pages);
   const thumb = useThumb(iss);
   const place = iss.file ? placeOf(iss.id) : undefined;
@@ -220,7 +221,7 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
           <button type="button" class="issue-title" onClick={resume} aria-label={place ? `${[iss.magazine, iss.issue].filter(Boolean).join(' ')}: go on reading on page ${place.pg}` : undefined}>
             {[iss.magazine, iss.issue].filter(Boolean).join(' ')}
           </button>
-          <span class="muted small">{finding || (iss.file ? `${iss.pages.length} articles · ${total} pages` : 'Demo issue')}</span>
+          <span class="muted small">{finding || (iss.file ? `${count(iss.pages.length, 'article')} · ${count(total, 'page')}` : 'Demo issue')}</span>
           {iss.unsaved && <span class="error small">This phone didn’t let the app keep the file: it will be gone after you close the app.</span>}
           <div class="bar" role="img" aria-label={`${read} of ${total} ${unit} read`}>
             <i class="known" style={{ width: `${(read / total) * 100}%` }} />
@@ -328,7 +329,8 @@ function PageGrid({ iss, total, here }: { iss: Issue; total: number; here?: numb
 export function SaveCopy({ iss, onSaved }: { iss: Issue; onSaved?: () => void }) {
   const [state, setState] = useState<'idle' | 'busy' | 'ready' | 'done' | 'error'>('idle');
   const [blob, setBlob] = useState<Blob | null>(null);
-  const name = `${[iss.magazine, iss.issue].filter(Boolean).join(' ')} — with notes.pdf`;
+  // A plain hyphen: Chrome drops a file name with "—" and saves the copy as "download", without .pdf.
+  const name = `${[iss.magazine, iss.issue].filter(Boolean).join(' ')} - with notes.pdf`;
   const notes = notesOf(iss.id, 'pages');
   const count = notes.hl.length + notes.strokes.length + notes.texts.length;
 

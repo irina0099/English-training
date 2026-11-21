@@ -21,6 +21,6 @@ window.visualViewport?.addEventListener('resize', () => {
 // Offline support for the installable version; the claude.ai copy doesn't use service workers.
 if (import.meta.env.PROD && import.meta.env.MODE !== 'artifact' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.register(`./sw.js?v=${__BUILD_ID__}`).catch(() => {});
   });
 }

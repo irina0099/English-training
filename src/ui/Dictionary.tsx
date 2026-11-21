@@ -271,7 +271,8 @@ function OneWordForm({ word, custom, onDone }: { word: VocabItem | null; custom:
     e.preventDefault();
     if (!draft.en.trim() || !draft.ru.trim()) return setError('Add both the word and its translation.');
     if (/[а-яё]/i.test(draft.en)) return setError('The first field is for the English word or phrase.');
-    if (!word && custom.some((w) => sameWord(w.en, draft.en))) return setError('This word is already in your list.');
+    // Also when editing: renaming a word into another one already saved made two of it.
+    if (custom.some((w) => w.id !== word?.id && sameWord(w.en, draft.en))) return setError('This word is already in your list.');
     if (!saveCustomWord(createCustomWord(draft, word ?? undefined))) return setError(WORDS_FULL);
     onDone();
   };

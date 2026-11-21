@@ -1,5 +1,8 @@
 // Offline cache: pages are network-first, built assets and fonts are cache-first.
-const CACHE = 'english-notebook-v1';
+// Each build registers this worker as sw.js?v=<build> and gets a cache of its own; activating
+// it deletes the previous build's cache, so old versions of the app don't fill the phone.
+const VERSION = new URL(self.location.href).searchParams.get('v') || '1';
+const CACHE = `english-notebook-${VERSION}`;
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png'];
 
 self.addEventListener('install', (event) => {

@@ -382,6 +382,8 @@ export function exportJson(d: AppData): string {
 export function importJson(text: string): AppData {
   const parsed: unknown = JSON.parse(text);
   if (!isObject(parsed) || parsed.v !== 1) throw new BackupError('This is not an English Notebook backup.');
+  // A backup cut short when copying can still be valid JSON: it must not wipe the progress.
+  if (!['states', 'mistakes', 'custom', 'days'].some((k) => k in parsed)) throw new BackupError('This backup has no progress or words in it. Check that you copied all of the text.');
   const now = Date.now();
   const next = sanitize(parsed);
   return { ...next, stamps: { progress: now, mistakes: now, words: now } };

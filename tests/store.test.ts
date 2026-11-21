@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, defaultData, getData, importJson, MAX_CUSTOM_WORDS, replaceData, sanitize, saveCustomWord, saveCustomWords } from '../src/engine/store';
+import { BackupError, DEFAULT_SETTINGS, defaultData, getData, importJson, MAX_CUSTOM_WORDS, replaceData, sanitize, saveCustomWord, saveCustomWords } from '../src/engine/store';
 import type { VocabItem } from '../src/types';
 
 const word = (id: string): VocabItem => ({ id, kind: 'word', en: id, ru: id, level: null, custom: true });
@@ -70,5 +70,16 @@ describe('own words', () => {
     const added = saveCustomWords([word('w0'), word('a'), word('a'), word('b'), word('c')]);
     expect(added).toBe(2);
     expect(getData().custom.slice(-2).map((w) => w.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('importJson', () => {
+  it('refuses a backup with nothing in it, which would wipe the progress', () => {
+    expect(() => importJson('{"v":1}')).toThrow(BackupError);
+    expect(() => importJson('{"v":1,"settings":{}}')).toThrow(BackupError);
+  });
+
+  it('accepts a backup with only own words', () => {
+    expect(importJson('{"v":1,"custom":[]}').custom).toEqual([]);
   });
 });

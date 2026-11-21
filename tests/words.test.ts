@@ -51,6 +51,15 @@ describe('parseBulk', () => {
     expect(drafts[0]).toMatchObject({ en: 'well-known', ru: 'известный', level: 'B1' });
   });
 
+  it('keeps a ";" or "|" inside the example of a line with dashes', () => {
+    const { drafts } = parseBulk('fork - вилка - Use a fork; not a knife. - Вилкой, а не ножом.', null);
+    expect(drafts[0]).toMatchObject({ en: 'fork', ru: 'вилка', ex: 'Use a fork; not a knife.', exRu: 'Вилкой, а не ножом.' });
+  });
+
+  it('still reads a line pasted from a spreadsheet', () => {
+    expect(parseBulk('sink | раковина | The sink is full.', null).drafts[0]).toMatchObject({ en: 'sink', ru: 'раковина', ex: 'The sink is full.' });
+  });
+
   it('rejects reversed lines', () => {
     expect(parseBulk('чайник - kettle', null).errors).toHaveLength(1);
   });
