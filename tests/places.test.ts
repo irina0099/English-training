@@ -59,3 +59,22 @@ describe('where reading stopped', () => {
     expect(placeOf(iss.id)).toBeUndefined();
   });
 });
+
+describe('the demo issue', () => {
+  it('can be hidden from the library and brought back, notes kept', async () => {
+    const { allIssues, setDemoHidden, updateNotes, notesOf } = await import('../src/reading/store');
+    const { ISSUES } = await import('../src/reading/issues');
+    const demo = ISSUES[0];
+    updateNotes(demo.id, demo.pages[0].id, { read: 1 });
+    setLast(demo.id, demo.pages[0].id);
+
+    setDemoHidden(true);
+    expect(allIssues().some((i) => i.id === demo.id)).toBe(false);
+    // "Continue reading" no longer points at a hidden issue.
+    expect(getReading().last).toBeUndefined();
+
+    setDemoHidden(false);
+    expect(allIssues().some((i) => i.id === demo.id)).toBe(true);
+    expect(notesOf(demo.id, demo.pages[0].id).read).toBe(1);
+  });
+});

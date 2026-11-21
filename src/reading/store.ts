@@ -20,6 +20,8 @@ export interface ReadingData {
   seen?: Record<string, number[]>;
   /** Where reading stopped in each PDF magazine, to open it there again. */
   places?: Record<string, Place>;
+  /** The learner hid the built-in demo issue from the library. */
+  hideDemo?: boolean;
 }
 
 /** A place in a PDF magazine: the printed page and how far down it (0 = its top, 1 = its bottom). */
@@ -146,7 +148,16 @@ export function setMenuStyle(menu: 'system' | 'app') {
 
 /** The learner's own magazines first, newest first, then the demo issue. */
 export function allIssues(d: ReadingData = data): Issue[] {
-  return [...(d.issues ?? []).slice().sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0)), ...ISSUES];
+  return [...(d.issues ?? []).slice().sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0)), ...(d.hideDemo ? [] : ISSUES)];
+}
+
+/**
+ * Hides or shows the built-in demo issue. It's part of the app, so it can't be deleted;
+ * hidden, it leaves the library and "Continue reading", and its notes wait in case it comes back.
+ */
+export function setDemoHidden(hidden: boolean) {
+  const lastIsDemo = ISSUES.some((i) => i.id === data.last?.issue);
+  save({ ...data, hideDemo: hidden || undefined, last: hidden && lastIsDemo ? undefined : data.last });
 }
 
 export function getIssue(id: string): Issue | undefined {
