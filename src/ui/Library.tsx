@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { packAt } from '../reading/docview';
 import { deleteFile, ImportError, importPdf } from '../reading/pdf';
 import { addIssue, allIssues, getIssue, getReading, notesOf, removeIssue, setMenuStyle, subscribeReading } from '../reading/store';
 import type { Issue, MagPage } from '../reading/types';
@@ -36,7 +37,7 @@ export function Library() {
     .flatMap((iss) => [
       ...iss.pages.flatMap((p) => notesOf(iss.id, p.id).hl.map((h) => ({ h, iss, p }))),
       // A PDF magazine keeps its highlights for the whole issue; find the article by page.
-      ...notesOf(iss.id, 'doc').hl.map((h) => ({ h, iss, p: articleAt(iss, h.pg ?? 1) })),
+      ...notesOf(iss.id, 'pages').hl.map((h) => ({ h, iss, p: articleAt(iss, h.pg ?? 1) })),
     ])
     .sort((a, b) => b.h.at - a.h.at);
   const savedFromReading = d.custom.filter((w) => w.ctx?.length).length;
@@ -115,7 +116,7 @@ export function Library() {
           <p class="section-title">Your highlights</p>
           <div class="list">
             {highlights.slice(0, 12).map(({ h, iss, p }) => (
-              <button type="button" class="list-item" key={h.id} onClick={() => nav.openReader(iss.id, p.id, h.start)}>
+              <button type="button" class="list-item" key={h.id} onClick={() => nav.openReader(iss.id, p.id, iss.file && h.pg ? packAt(h.pg, h.start) : h.start)}>
                 <i class={`hl-dot hl-${h.color}`} aria-hidden="true" />
                 <span class="list-item-main">
                   <b class="quote">“{h.text}”</b>

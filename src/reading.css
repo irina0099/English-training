@@ -1479,3 +1479,78 @@ body > .modal-backdrop {
 .pull-hint.ready b {
   color: #fff;
 }
+
+/* ——— PDF magazines: one column of pages with the browser's own scrolling ——— */
+
+.doc-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* Pinch is ours (it changes the page width); panning is the browser's. */
+  touch-action: pan-x pan-y;
+  background: var(--reader-bg);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.doc-scroll.is-markup {
+  touch-action: none;
+}
+
+.doc-col {
+  position: relative;
+  padding: 0;
+  will-change: auto;
+}
+
+.doc-col .pdf-page {
+  position: relative;
+  margin-bottom: 8px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 1px 6px rgba(0, 0, 0, 0.1);
+}
+
+.doc-col .pdf-text {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+  z-index: 1;
+}
+
+.is-markup .doc-col .pdf-text {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pg-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.pg-overlay i {
+  position: absolute;
+  display: block;
+}
+
+.pg-overlay .ink-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.pg-overlay .text-note {
+  pointer-events: auto;
+}
+
+.doc-zoom {
+  position: absolute;
+  right: 12px;
+  bottom: 60px;
+}

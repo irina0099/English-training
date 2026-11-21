@@ -13,6 +13,7 @@ import { useData } from './hooks';
 import { IconBook, IconHome, IconNews, IconPen, IconRule } from './icons';
 import { getIssue } from '../reading/store';
 import { Library } from './Library';
+import { DocReader } from './DocReader';
 import { Reader } from './Reader';
 import { Mistakes } from './Mistakes';
 import { RuleBody, Rules } from './Rules';
@@ -104,7 +105,11 @@ export function App() {
       <div class="shell">
         {tab === 'read' && reader && getIssue(reader.issue) ? (
           // The page opens inside the app, above the tab bar, not as a separate screen.
-          <Reader key={reader.key} issueId={reader.issue} pageId={reader.page} focus={reader.focus} onClose={() => setReader(null)} />
+          getIssue(reader.issue)!.file ? (
+            <DocReader key={reader.key} issueId={reader.issue} pageId={reader.page} focus={reader.focus} onClose={() => setReader(null)} />
+          ) : (
+            <Reader key={reader.key} issueId={reader.issue} pageId={reader.page} focus={reader.focus} onClose={() => setReader(null)} />
+          )
         ) : (
         <main class="scroller" id="scroller">
           {tab === 'home' && <Home cloud={cloud} />}

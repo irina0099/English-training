@@ -1,7 +1,6 @@
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { findMap } from './maps';
 import type { Issue, MagPage } from './types';
-import { PAGE_WIDTH } from './types';
 
 // Magazines added as PDF files. The file stays on this device (IndexedDB);
 // pages are drawn exactly as printed, with an invisible text layer on top so
@@ -202,7 +201,7 @@ async function renderThumb(page: PDFPageProxy): Promise<string> {
 /** Safari's limit for one canvas is about 16.7 million pixels. */
 const MAX_PIXELS = 16_000_000;
 
-async function drawPage(page: PDFPageProxy, width: number): Promise<Blob | null> {
+export async function drawPage(page: PDFPageProxy, width: number): Promise<Blob | null> {
   const base = page.getViewport({ scale: 1 });
   const target = Math.min(width, Math.sqrt(MAX_PIXELS * (base.width / base.height)));
   const viewport = page.getViewport({ scale: target / base.width });
@@ -217,155 +216,24 @@ async function drawPage(page: PDFPageProxy, width: number): Promise<Blob | null>
 }
 
 /**
- * A whole magazine as one continuous column of pages, like Preview. Every page gets its
- * place and its text layer, but only the pages near the screen are drawn, so a long issue
- * fits in the phone's memory.
- */
-export class PdfView {
-  slots: HTMLElement[] = [];
-  private pages: PDFPageProxy[] = [];
-  private m: PdfJs | null = null;
-  private wanted: number[] = [];
-  private drawing = false;
-  private alive = true;
-  /** Picture width, in device pixels, when the page fills the screen width. */
-  private baseWidth = 1200;
-  private sharp: number | null = null;
-
-  constructor(
-    private root: HTMLElement,
-    private key: string,
-  ) {}
-
-  /** Places every page (sizes only); returns the number of pages. */
-  async layout(gap: number): Promise<number> {
-    this.m = await pdfjs();
-    const doc = await openDoc(this.key);
-    for (let n = 1; n <= doc.numPages; n++) {
-      const page = await doc.getPage(n);
-      if (!this.alive) return 0;
-      const vp = page.getViewport({ scale: PAGE_WIDTH / page.getViewport({ scale: 1 }).width });
-      const slot = document.createElement('div');
-      slot.className = 'pdf-page';
-      slot.style.height = `${vp.height}px`;
-      if (n > 1) slot.style.marginTop = `${gap}px`;
-      slot.dataset.page = String(n);
-      this.root.appendChild(slot);
-      this.slots.push(slot);
-      this.pages.push(page);
-    }
-    return doc.numPages;
-  }
-
-  /** Builds the text layers, nearest pages first; `onDone` runs when every page has its text. */
-  async buildText(first: number, onPage: () => void, onDone: () => void) {
-    const order = this.slots.map((_, i) => i).sort((a, b) => Math.abs(a - (first - 1)) - Math.abs(b - (first - 1)));
-    for (const i of order) {
-      if (!this.alive) return;
-      const page = this.pages[i];
-      const vp = page.getViewport({ scale: PAGE_WIDTH / page.getViewport({ scale: 1 }).width });
-      const text = document.createElement('div');
-      text.className = 'pdf-text';
-      try {
-        await buildTextLayer(this.m!, page, vp, text);
-      } catch {
-        continue;
-      }
-      if (!this.alive) return;
-      this.slots[i].appendChild(text);
-      onPage();
-      // Let the page breathe between pages: scrolling stays smooth while text is prepared.
-      await new Promise((r) => setTimeout(r, 0));
-    }
-    onDone();
-  }
-
-  /** Draws the given pages (numbers from 1, most important first) and forgets far-away ones. */
-  show(pages: number[], baseWidth: number) {
-    this.baseWidth = Math.round(baseWidth);
-    this.wanted = pages.filter((n) => n >= 1 && n <= this.slots.length);
-    const keep = new Set<number>();
-    for (const n of this.wanted) for (let k = n - 1; k <= n + 1; k++) keep.add(k);
-    this.slots.forEach((slot, i) => {
-      if (!keep.has(i + 1)) this.drop(slot);
-    });
-    void this.drain();
-  }
-
-  private drop(slot: HTMLElement) {
-    const img = slot.querySelector<HTMLImageElement>('.pdf-img');
-    if (!img) return;
-    URL.revokeObjectURL(img.src);
-    img.remove();
-    delete slot.dataset.width;
-    if (this.sharp === Number(slot.dataset.page)) this.sharp = null;
-  }
-
-  private async drain() {
-    if (this.drawing) return;
-    this.drawing = true;
-    try {
-      for (;;) {
-        const n = this.wanted.find((k) => !this.slots[k - 1]?.querySelector('.pdf-img'));
-        if (!n || !this.alive) break;
-        await this.paint(n, this.baseWidth);
-      }
-    } finally {
-      this.drawing = false;
-    }
-  }
-
-  private async paint(n: number, width: number): Promise<boolean> {
-    const slot = this.slots[n - 1];
-    const blob = await drawPage(this.pages[n - 1], width);
-    if (!blob || !this.alive || !slot) return false;
-    let img = slot.querySelector<HTMLImageElement>('.pdf-img');
-    if (img) URL.revokeObjectURL(img.src);
-    else {
-      img = document.createElement('img');
-      img.className = 'pdf-img';
-      img.alt = '';
-      img.draggable = false;
-      slot.insertBefore(img, slot.firstChild);
-    }
-    img.src = URL.createObjectURL(blob);
-    slot.dataset.width = String(Math.round(width));
-    return true;
-  }
-
-  /**
-   * Redraws one page sharper for the current zoom, like Preview once you stop zooming;
-   * the page sharpened before goes back to normal, to save memory.
-   */
-  async sharpen(n: number, width: number) {
-    if (this.sharp && this.sharp !== n) {
-      const prev = this.sharp;
-      this.sharp = null;
-      if (Number(this.slots[prev - 1]?.dataset.width) > this.baseWidth * 1.15) await this.paint(prev, this.baseWidth);
-    }
-    const slot = this.slots[n - 1];
-    if (!slot?.querySelector('.pdf-img')) return;
-    if (width <= Number(slot.dataset.width ?? 0) * 1.15) return;
-    if (await this.paint(n, width)) this.sharp = n;
-  }
-
-  destroy() {
-    this.alive = false;
-    for (const slot of this.slots) this.drop(slot);
-  }
-}
-
-/**
  * The invisible words over the page picture, placed by pdf.js's own text layer: it measures the
  * fonts it falls back to, so the selection sits on the printed words.
  */
 async function buildTextLayer(m: PdfJs, page: PDFPageProxy, viewport: ReturnType<PDFPageProxy['getViewport']>, el: HTMLElement) {
   const content = await page.getTextContent();
   el.classList.add('textLayer');
-  el.style.setProperty('--total-scale-factor', String(viewport.scale));
   const layer = new m.TextLayer({ textContentSource: content, container: el, viewport });
   await layer.render();
   // Line ends come out as <br>: give the page's text a space there, so the last word of
   // a line and the first word of the next don't run together.
   for (const br of el.querySelectorAll('br')) br.before(document.createTextNode(' '));
+}
+
+/** A text layer for one page, sized by the `--total-scale-factor` of the element it goes into. */
+export async function makeTextLayer(page: PDFPageProxy, scale: number): Promise<HTMLElement> {
+  const m = await pdfjs();
+  const el = document.createElement('div');
+  el.className = 'pdf-text';
+  await buildTextLayer(m, page, page.getViewport({ scale }), el);
+  return el;
 }

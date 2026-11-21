@@ -43,8 +43,10 @@ export interface Highlight {
   color: HighlightColor;
   text: string;
   at: number;
-  /** For a PDF magazine: the printed page the highlight starts on. */
+  /** For a PDF magazine: the printed page, and offsets within that page's text. */
   pg?: number;
+  /** For a PDF magazine: line boxes as fractions of the page (x, y, width, height). */
+  rects?: [number, number, number, number][];
 }
 
 export type Tool = 'pen' | 'marker' | 'pencil' | 'eraser' | 'text';
@@ -52,6 +54,8 @@ export type Tool = 'pen' | 'marker' | 'pencil' | 'eraser' | 'text';
 /** A Markup stroke in page coordinates. Points are flattened: x0, y0, x1, y1… */
 export interface Stroke {
   id: string;
+  /** For a PDF magazine: the printed page it's drawn on. */
+  pg?: number;
   tool: 'pen' | 'marker' | 'pencil';
   color: string;
   width: number;
@@ -61,6 +65,8 @@ export interface Stroke {
 /** A text box added with Markup. */
 export interface TextNote {
   id: string;
+  /** For a PDF magazine: the printed page it's on. */
+  pg?: number;
   x: number;
   y: number;
   text: string;
