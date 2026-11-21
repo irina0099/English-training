@@ -521,9 +521,30 @@ body > .modal-backdrop {
 }
 
 .issue-card {
+  position: relative;
   display: flex;
   gap: 14px;
   align-items: center;
+  transition: background-color 0.15s ease;
+}
+
+/* The magazine's name stretches its tap area over the whole card (cover included). */
+.issue-title::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.issue-card:has(.issue-title:active) {
+  background: var(--highlight);
+}
+
+/* "Show contents" sits above the card's tap area, so it folds and unfolds the contents. */
+.issue-contents {
+  position: relative;
+  z-index: 1;
+  align-self: flex-start;
 }
 
 .cover-tile {

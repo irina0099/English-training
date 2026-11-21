@@ -58,7 +58,8 @@ export function Library() {
     .sort((a, b) => b.h.at - a.h.at);
   const savedFromReading = d.custom.filter((w) => w.ctx?.length).length;
   const menu = r.menu ?? 'system';
-  const [open, setOpen] = useState<string | null>(() => issues[0]?.id ?? null);
+  // Contents start folded: the card itself opens the magazine; "Show contents" unfolds them.
+  const [open, setOpen] = useState<string | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState('');
@@ -71,7 +72,6 @@ export function Library() {
       const issue = await importPdf(file, setStep);
       const replaced = addIssue(issue);
       if (replaced) deleteFile(replaced).catch(() => {});
-      setOpen(issue.id);
     } catch (e) {
       const why = e instanceof ImportError ? e.message : e instanceof Error ? `${e.name} ${e.message}` : String(e);
       setError(`Couldn’t open this file. Check that it is a PDF and that it is downloaded to the phone (not only in iCloud), then try again. Details: ${why}`);
@@ -202,24 +202,23 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
     <section class="section" aria-label={`${iss.magazine} ${iss.issue}`}>
       <div class="issue-card sheet">
         {thumb ? (
-          <button type="button" class="cover-img" onClick={resume} aria-label={place ? `Go on reading ${iss.magazine} on page ${place.pg}` : `Open ${iss.magazine}`}>
+          <span class="cover-img" aria-hidden="true">
             <img src={thumb} alt="" />
-          </button>
+          </span>
         ) : (
-          <button
-            type="button"
+          <span
             class="cover-tile"
             style={{ '--c-bg': iss.cover.bg, '--c-fg': iss.cover.fg, '--c-ac': iss.cover.accent } as Record<string, string>}
-            onClick={resume}
-            aria-label={`Open ${iss.magazine}`}
+            aria-hidden="true"
           >
             <span class="cover-name">{iss.magazine}</span>
             <span class="cover-no">{iss.issue}</span>
             <span class="cover-head">{iss.pages[1]?.title}</span>
-          </button>
+          </span>
         )}
         <div class="issue-info">
-          <button type="button" class="issue-title" onClick={resume}>
+          {/* The whole card opens the magazine where reading stopped: this button stretches over it. */}
+          <button type="button" class="issue-title" onClick={resume} aria-label={place ? `${[iss.magazine, iss.issue].filter(Boolean).join(' ')}: go on reading on page ${place.pg}` : undefined}>
             {[iss.magazine, iss.issue].filter(Boolean).join(' ')}
           </button>
           <span class="muted small">{finding || (iss.file ? `${iss.pages.length} articles · ${total} pages` : 'Demo issue')}</span>
@@ -230,7 +229,7 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
           <span class="muted small">
             {read} of {total} {unit} read{place ? ` · stopped on p. ${place.pg}` : ''}
           </span>
-          <button type="button" class="link small" style={{ alignSelf: 'flex-start' }} aria-expanded={open} onClick={onToggle}>
+          <button type="button" class="link small issue-contents" aria-expanded={open} onClick={onToggle}>
             {open ? 'Hide contents' : 'Show contents'}
           </button>
         </div>
