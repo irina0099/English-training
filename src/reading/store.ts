@@ -1,6 +1,6 @@
 import { saveItem } from '../storage';
 import { ISSUES } from './issues';
-import type { Issue, PageNotes } from './types';
+import type { Issue, MagPage, PageNotes } from './types';
 
 // Highlights, Markup and reading progress live in their own storage key, so the
 // main progress (and its cloud sync) stays as it was. Words saved while reading
@@ -18,6 +18,14 @@ export interface ReadingData {
   issues?: Issue[];
   /** Printed pages read in each PDF magazine: the climb goes up with every one. */
   seen?: Record<string, number[]>;
+  /** Where reading stopped in each PDF magazine, to open it there again. */
+  places?: Record<string, Place>;
+}
+
+/** A place in a PDF magazine: the printed page and how far down it (0 = its top, 1 = its bottom). */
+export interface Place {
+  pg: number;
+  y: number;
 }
 
 const empty = (): ReadingData => ({ pages: {} });
@@ -106,6 +114,32 @@ export function updateIssuePages(id: string, pages: Issue['pages']) {
   save({ ...data, issues: (data.issues ?? []).map((i) => (i.id === id ? { ...i, pages } : i)), seen: { ...data.seen, [id]: seen } });
 }
 
+export function placeOf(issue: string, d: ReadingData = data): Place | undefined {
+  return d.places?.[issue];
+}
+
+/** Remembers where reading stopped in a magazine. */
+export function setPlace(issue: string, place: Place) {
+  const y = Math.round(Math.min(1, Math.max(0, place.y)) * 100) / 100;
+  const cur = placeOf(issue);
+  if (cur?.pg === place.pg && cur.y === y) return;
+  save({ ...data, places: { ...data.places, [issue]: { pg: place.pg, y } } });
+}
+
+/** The article a printed page belongs to: the last one that starts on it or before. */
+export function articleAt(iss: Issue, pg: number): MagPage {
+  const byPage = iss.pages.slice().sort((a, b) => (a.pdf?.from ?? 0) - (b.pdf?.from ?? 0));
+  return [...byPage].reverse().find((a) => (a.pdf?.from ?? 1) <= pg) ?? byPage[0];
+}
+
+/** Where to open a magazine to go on reading: the place it was left, or else its first article. */
+export function resumeOf(iss: Issue, d: ReadingData = data): { page: MagPage; at?: Place } {
+  const at = placeOf(iss.id, d);
+  if (at) return { page: articleAt(iss, at.pg), at };
+  const last = d.last?.issue === iss.id ? iss.pages.find((p) => p.id === d.last!.page) : undefined;
+  return { page: last ?? iss.pages[0] };
+}
+
 export function setMenuStyle(menu: 'system' | 'app') {
   save({ ...data, menu });
 }
@@ -144,5 +178,6 @@ export function restoreReading(r: unknown) {
 
 export function removeIssue(id: string) {
   const pages = Object.fromEntries(Object.entries(data.pages).filter(([k]) => !k.startsWith(`${id}/`)));
-  save({ ...data, pages, issues: (data.issues ?? []).filter((i) => i.id !== id), last: data.last?.issue === id ? undefined : data.last });
+  const { [id]: _place, ...places } = data.places ?? {};
+  save({ ...data, pages, places, issues: (data.issues ?? []).filter((i) => i.id !== id), last: data.last?.issue === id ? undefined : data.last });
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DocView, packAt, UNITS, unpackAt } from '../reading/docview';
-import { getIssue, markPageRead, markRead, notesOf, seenPages, setLast, subscribeReading, updateNotes } from '../reading/store';
+import { getIssue, markPageRead, markRead, notesOf, seenPages, setLast, setPlace, subscribeReading, updateNotes, type Place } from '../reading/store';
 import { rangeFor, sentenceAround, wordAt } from '../reading/text';
 import type { Highlight, HighlightColor, PageNotes, Stroke, TextNote, Tool } from '../reading/types';
 import { speak } from '../tts';
@@ -24,7 +24,7 @@ interface PageSel {
 
 type Sheet = { kind: 'lookup' | 'translate' | 'add'; text: string; sentence: string; at: number } | { kind: 'text'; note: TextNote } | null;
 
-export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string; pageId: string; focus?: number; onClose: () => void }) {
+export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: string; pageId: string; focus?: number; at?: Place; onClose: () => void }) {
   const issue = getIssue(issueId)!;
   const order = useMemo(() => issue.pages.slice().sort((a, b) => (a.pdf?.from ?? 0) - (b.pdf?.from ?? 0)), [issue]);
   const [article, setArticle] = useState(pageId);
@@ -121,6 +121,9 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
               flash(slot.overlay, rect);
             }
           }
+        } else if (at && dv.slots[at.pg - 1]) {
+          // Back where reading stopped, or on the page chosen in the contents.
+          dv.scrollToPage(at.pg, at.y * dv.slots[at.pg - 1].height);
         } else dv.scrollToPage(mp.pdf?.from ?? 1);
       })
       .catch(() => setError(true));
@@ -128,6 +131,8 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
     scroller.addEventListener('touchstart', mark, { passive: true });
     scroller.addEventListener('wheel', mark, { passive: true });
     return () => {
+      clearTimeout(placeTimer.current);
+      savePlace();
       dv.destroy();
       dvRef.current = null;
       scroller.removeEventListener('touchstart', mark);
@@ -145,6 +150,21 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
     const here = [...order].reverse().find((a) => (a.pdf?.from ?? 1) <= middle) ?? order[0];
     setArticle(here.id);
     setLast(issueId, here.id);
+    // The place is saved once scrolling stops: saving on every frame would slow it down.
+    clearTimeout(placeTimer.current);
+    placeTimer.current = window.setTimeout(savePlace, 400);
+  };
+
+  /** Remembers the page at the top of the screen and how far down it, to open there next time. */
+  const placeTimer = useRef(0);
+  const savePlace = () => {
+    const dv = dvRef.current;
+    const scroller = scrollerRef.current;
+    if (!dv || !scroller || !dv.slots.length) return;
+    const y = scroller.scrollTop + dv.col.offsetTop;
+    const pg = dv.pageAt(y + 1);
+    const slot = dv.slots[pg - 1];
+    setPlace(issueId, { pg, y: slot.height ? (y - slot.top) / slot.height : 0 });
   };
 
   // ——— Pages read (they move the climb up) ———

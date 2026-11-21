@@ -11,7 +11,7 @@ import { Games, type GameId } from './Games';
 import { Home } from './Home';
 import { useData, useStorageFull } from './hooks';
 import { IconBook, IconHome, IconNews, IconPen, IconRule } from './icons';
-import { getIssue } from '../reading/store';
+import { getIssue, type Place } from '../reading/store';
 import { Library } from './Library';
 import { DocReader } from './DocReader';
 import { Reader } from './Reader';
@@ -41,7 +41,7 @@ export function App() {
   const [session, setSession] = useState<{ mode: SessionMode; key: number } | null>(null);
   const [cards, setCards] = useState<{ deck: Deck; key: number } | null>(null);
   const [rule, setRule] = useState<string | null>(null);
-  const [reader, setReader] = useState<{ issue: string; page: string; focus?: number; key: number } | null>(null);
+  const [reader, setReader] = useState<{ issue: string; page: string; focus?: number; at?: Place; key: number } | null>(null);
   const [cloud, setCloud] = useState<CloudStatus>('local');
   const storageFull = useStorageFull();
 
@@ -85,10 +85,10 @@ export function App() {
       openRule(id) {
         if (RULES_BY_ID[id]) setRule(id);
       },
-      openReader(issue, page, focus) {
+      openReader(issue, page, focus, at) {
         setSession(null);
         setCards(null);
-        setReader({ issue, page, focus, key: Date.now() });
+        setReader({ issue, page, focus, at, key: Date.now() });
         setTab('read');
         try {
           history.replaceState(null, '', '#read');
@@ -119,7 +119,7 @@ export function App() {
         {tab === 'read' && reader && getIssue(reader.issue) ? (
           // The page opens inside the app, above the tab bar, not as a separate screen.
           getIssue(reader.issue)!.file ? (
-            <DocReader key={reader.key} issueId={reader.issue} pageId={reader.page} focus={reader.focus} onClose={() => setReader(null)} />
+            <DocReader key={reader.key} issueId={reader.issue} pageId={reader.page} focus={reader.focus} at={reader.at} onClose={() => setReader(null)} />
           ) : (
             <Reader key={reader.key} issueId={reader.issue} pageId={reader.page} focus={reader.focus} onClose={() => setReader(null)} />
           )

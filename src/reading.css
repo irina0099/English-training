@@ -577,8 +577,66 @@ body > .modal-backdrop {
   gap: 4px;
 }
 
-.issue-info b {
+.issue-info b,
+.issue-title {
   font-size: 17px;
+}
+
+/* The magazine's name opens it where reading stopped, like its cover. */
+.issue-title {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  text-align: left;
+  color: var(--label);
+  cursor: pointer;
+}
+
+/* "Pages" in the contents: every printed page as a numbered tile. */
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 6px;
+  padding: 12px;
+}
+
+.page-cell {
+  position: relative;
+  min-height: 44px;
+  border: none;
+  border-radius: 8px;
+  background: var(--fill);
+  color: var(--label);
+  font: inherit;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.page-cell.read {
+  background: var(--green-tint);
+  color: var(--green-text);
+  font-weight: 600;
+}
+
+.page-cell.here {
+  box-shadow: inset 0 0 0 2px var(--blue);
+}
+
+/* A new article starts on this page. */
+.page-cell.starts::before {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--label-3);
 }
 
 .page-row .topic {

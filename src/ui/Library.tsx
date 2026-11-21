@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { packAt } from '../reading/docview';
 import { annotatedPdf, shareFile } from '../reading/exportpdf';
 import { deleteFile, ImportError, importPdf, loadThumb, redetect } from '../reading/pdf';
-import { addIssue, allIssues, seenPages, updateIssuePages, getIssue, getReading, notesOf, removeIssue, setMenuStyle, subscribeReading } from '../reading/store';
+import { addIssue, allIssues, articleAt, getIssue, getReading, notesOf, placeOf, removeIssue, resumeOf, seenPages, setMenuStyle, subscribeReading, updateIssuePages } from '../reading/store';
 import type { Issue, MagPage } from '../reading/types';
 import { ConfirmButton } from './common';
 import { useNav } from './context';
@@ -33,11 +33,6 @@ function useThumb(iss: Issue): string | undefined {
     };
   }, [iss.thumb, iss.thumbFile]);
   return url;
-}
-
-function articleAt(iss: Issue, pg: number): MagPage {
-  const byPage = iss.pages.slice().sort((a, b) => (a.pdf?.from ?? 0) - (b.pdf?.from ?? 0));
-  return [...byPage].reverse().find((a) => (a.pdf?.from ?? 1) <= pg) ?? byPage[0];
 }
 
 /** Articles grouped by the magazine's sections, in the order they first appear. */
@@ -107,15 +102,7 @@ export function Library() {
       )}
       {error && <p class="error">{error}</p>}
 
-      {last && lastPage && (
-        <button type="button" class="sheet continue" onClick={() => nav.openReader(last.id, lastPage.id)}>
-          <span class="eyebrow">Continue reading</span>
-          <b>{lastPage.title}</b>
-          <span class="muted small">
-            {[last.magazine, last.issue, lastPage.topic].filter(Boolean).join(' · ')}
-          </span>
-        </button>
-      )}
+      {last && lastPage && <ContinueCard iss={last} />}
 
       {!issues.some((i) => i.file) && (
         <button type="button" class="sheet add-mag" onClick={() => fileRef.current?.click()}>
@@ -187,6 +174,13 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
   const unit = iss.file ? 'pages' : 'articles';
   const groups = byTopic(iss.pages);
   const thumb = useThumb(iss);
+  const place = iss.file ? placeOf(iss.id) : undefined;
+  // The cover and the title open the magazine where reading stopped.
+  const resume = () => {
+    const r = resumeOf(iss);
+    nav.openReader(iss.id, r.page.id, undefined, r.at);
+  };
+  const [contents, setContents] = useState<'articles' | 'pages'>('articles');
 
   // Magazines added while unknown issues were listed page by page get their articles found now.
   const [finding, setFinding] = useState('');
@@ -208,7 +202,7 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
     <section class="section" aria-label={`${iss.magazine} ${iss.issue}`}>
       <div class="issue-card sheet">
         {thumb ? (
-          <button type="button" class="cover-img" onClick={() => nav.openReader(iss.id, iss.pages[0].id)} aria-label={`Open ${iss.magazine}`}>
+          <button type="button" class="cover-img" onClick={resume} aria-label={place ? `Go on reading ${iss.magazine} on page ${place.pg}` : `Open ${iss.magazine}`}>
             <img src={thumb} alt="" />
           </button>
         ) : (
@@ -216,8 +210,8 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
             type="button"
             class="cover-tile"
             style={{ '--c-bg': iss.cover.bg, '--c-fg': iss.cover.fg, '--c-ac': iss.cover.accent } as Record<string, string>}
-            onClick={() => nav.openReader(iss.id, iss.pages[0].id)}
-            aria-label={`Open the cover of ${iss.magazine}`}
+            onClick={resume}
+            aria-label={`Open ${iss.magazine}`}
           >
             <span class="cover-name">{iss.magazine}</span>
             <span class="cover-no">{iss.issue}</span>
@@ -225,21 +219,35 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
           </button>
         )}
         <div class="issue-info">
-          <b>{[iss.magazine, iss.issue].filter(Boolean).join(' ')}</b>
+          <button type="button" class="issue-title" onClick={resume}>
+            {[iss.magazine, iss.issue].filter(Boolean).join(' ')}
+          </button>
           <span class="muted small">{finding || (iss.file ? `${iss.pages.length} articles · ${total} pages` : 'Demo issue')}</span>
           {iss.unsaved && <span class="error small">This phone didn’t let the app keep the file: it will be gone after you close the app.</span>}
           <div class="bar" role="img" aria-label={`${read} of ${total} ${unit} read`}>
             <i class="known" style={{ width: `${(read / total) * 100}%` }} />
           </div>
           <span class="muted small">
-            {read} of {total} {unit} read
+            {read} of {total} {unit} read{place ? ` · stopped on p. ${place.pg}` : ''}
           </span>
           <button type="button" class="link small" style={{ alignSelf: 'flex-start' }} aria-expanded={open} onClick={onToggle}>
             {open ? 'Hide contents' : 'Show contents'}
           </button>
         </div>
       </div>
+      {open && iss.file && (
+        <div class="segmented" role="group" aria-label="Contents">
+          <button type="button" aria-pressed={contents === 'articles'} onClick={() => setContents('articles')}>
+            Articles
+          </button>
+          <button type="button" aria-pressed={contents === 'pages'} onClick={() => setContents('pages')}>
+            Pages
+          </button>
+        </div>
+      )}
+      {open && iss.file && contents === 'pages' && <PageGrid iss={iss} total={total} here={place?.pg} />}
       {open &&
+        (!iss.file || contents === 'articles') &&
         groups.map(([topic, pages]) => (
           <div class="stack-sm" key={topic}>
             {groups.length > 1 && <p class="section-title">{topic}</p>}
@@ -276,6 +284,52 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
         />
       )}
     </section>
+  );
+}
+
+/** "Continue reading": the magazine and the page where reading stopped. */
+function ContinueCard({ iss }: { iss: Issue }) {
+  const nav = useNav();
+  const { page, at } = resumeOf(iss);
+  return (
+    <button type="button" class="sheet continue" onClick={() => nav.openReader(iss.id, page.id, undefined, at)}>
+      <span class="eyebrow">Continue reading</span>
+      <b>{page.title}</b>
+      <span class="muted small">{[iss.magazine, iss.issue, at ? `p. ${at.pg}` : page.topic].filter(Boolean).join(' · ')}</span>
+    </button>
+  );
+}
+
+/**
+ * Every printed page of a magazine as a numbered tile, like the page thumbnails in Preview:
+ * pages read are green, the page where reading stopped is outlined, and a new article starts
+ * with a mark. A tap opens that page.
+ */
+function PageGrid({ iss, total, here }: { iss: Issue; total: number; here?: number }) {
+  const nav = useNav();
+  const seen = new Set(seenPages(iss.id));
+  const starts = new Map(iss.pages.filter((p) => p.pdf).map((p) => [p.pdf!.from, p.title]));
+  return (
+    <div class="page-grid sheet">
+      {Array.from({ length: total }, (_, i) => {
+        const pg = i + 1;
+        const article = articleAt(iss, pg);
+        const read = seen.has(pg);
+        return (
+          <button
+            type="button"
+            key={pg}
+            class={`page-cell${read ? ' read' : ''}${pg === here ? ' here' : ''}${starts.has(pg) ? ' starts' : ''}`}
+            aria-current={pg === here ? 'page' : undefined}
+            aria-label={`Page ${pg}, ${article.title}${read ? ', read' : ''}${pg === here ? ', where you stopped' : ''}`}
+            title={article.title}
+            onClick={() => nav.openReader(iss.id, article.id, undefined, { pg, y: 0 })}
+          >
+            {pg}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

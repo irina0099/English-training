@@ -3,7 +3,7 @@ import type { CloudStatus } from '../engine/cloud';
 import { CAMPS, climbOf, PEAKS } from '../engine/climb';
 import { isFixed, mistakesByItem } from '../engine/mistakes';
 import { dueCount, newLeftToday, progressOf, streak, studyItems, todayKey, unseenCount } from '../engine/store';
-import { getIssue, pagesRead } from '../reading/store';
+import { getIssue, pagesRead, resumeOf } from '../reading/store';
 import { Modal, Row } from './common';
 import { useNav } from './context';
 import { useData } from './hooks';
@@ -34,7 +34,9 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
   const [showClimb, setShowClimb] = useState(false);
   const words = progressOf([...studyItems(d)].filter((i) => i.kind !== 'drill'), d.states);
   const last = reading.last && getIssue(reading.last.issue);
-  const lastPage = last?.pages.find((p) => p.id === reading.last!.page);
+  // Where reading stopped: the page in a PDF magazine, or the article in the demo issue.
+  const resume = last ? resumeOf(last, reading) : undefined;
+  const lastPage = resume?.page;
   const date = new Date(now).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   const goal = d.settings.sessionSize;
 
@@ -136,8 +138,8 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
           icon={<IconNews size={18} />}
           color="var(--teal)"
           title={lastPage ? 'Continue reading' : 'Read a magazine'}
-          subtitle={lastPage ? lastPage.title : 'Look up and save words as you read'}
-          onClick={() => (last && lastPage ? nav.openReader(last.id, lastPage.id) : nav.go('read'))}
+          subtitle={lastPage ? [lastPage.title, resume?.at ? `p. ${resume.at.pg}` : ''].filter(Boolean).join(' · ') : 'Look up and save words as you read'}
+          onClick={() => (last && lastPage ? nav.openReader(last.id, lastPage.id, undefined, resume?.at) : nav.go('read'))}
         />
         <Row
           icon={<IconPen size={18} />}
