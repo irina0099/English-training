@@ -10,7 +10,29 @@ import { PAGE_WIDTH } from './types';
 type PdfJs = typeof import('pdfjs-dist');
 let lib: Promise<PdfJs> | null = null;
 
+/**
+ * pdf.js reads page text with `for await (… of stream)`. Safari (iPhone included) can't iterate
+ * a ReadableStream that way yet, which broke adding a magazine there; teach it how.
+ */
+function streamIteration() {
+  const proto = (typeof ReadableStream === 'undefined' ? null : ReadableStream.prototype) as unknown as Record<symbol, unknown> | null;
+  if (!proto || proto[Symbol.asyncIterator]) return;
+  proto[Symbol.asyncIterator] = async function* (this: ReadableStream) {
+    const reader = this.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        yield value;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  };
+}
+
 function pdfjs(): Promise<PdfJs> {
+  streamIteration();
   lib ??= Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')]).then(([m, worker]) => {
     m.GlobalWorkerOptions.workerSrc = worker.default;
     return m;
