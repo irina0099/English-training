@@ -102,7 +102,8 @@ export function App() {
 
   return (
     <NavContext.Provider value={nav}>
-      <div class="shell">
+      {/* A magazine opens full screen, like Preview: the tab bar steps aside while reading. */}
+      <div class={`shell ${tab === 'read' && reader && getIssue(reader.issue)?.file ? 'reading' : ''}`}>
         {tab === 'read' && reader && getIssue(reader.issue) ? (
           // The page opens inside the app, above the tab bar, not as a separate screen.
           getIssue(reader.issue)!.file ? (

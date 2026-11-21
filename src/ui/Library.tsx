@@ -243,7 +243,7 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
  * for iCloud Drive via the share sheet. Two taps, because iPhone opens the share sheet only
  * straight after a tap, and preparing a large magazine takes a few seconds.
  */
-function SaveCopy({ iss }: { iss: Issue }) {
+export function SaveCopy({ iss }: { iss: Issue }) {
   const [state, setState] = useState<'idle' | 'busy' | 'ready' | 'done' | 'error'>('idle');
   const [blob, setBlob] = useState<Blob | null>(null);
   const name = `${[iss.magazine, iss.issue].filter(Boolean).join(' ')} — with notes.pdf`;

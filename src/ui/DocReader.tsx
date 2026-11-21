@@ -4,7 +4,9 @@ import { getIssue, markRead, notesOf, setLast, subscribeReading, updateNotes } f
 import { rangeFor, sentenceAround, wordAt } from '../reading/text';
 import type { Highlight, HighlightColor, PageNotes, Stroke, TextNote, Tool } from '../reading/types';
 import { speak } from '../tts';
-import { IconBack, IconChevron, IconMarkup, IconRedo, IconSpeaker, IconUndo } from './icons';
+import { Modal } from './common';
+import { IconBack, IconCheck, IconChevron, IconList, IconMarkup, IconMore, IconRedo, IconShare, IconSpeaker, IconUndo } from './icons';
+import { SaveCopy } from './Library';
 import { AddWordSheet, COLORS, INKS, LookupSheet, round, strokePath, TextNoteSheet, ToolGlyph, TranslateSheet, uid, WIDTHS } from './Reader';
 
 // The reader for magazines added as PDF: one continuous column of pages, like Preview.
@@ -151,7 +153,7 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
     const next = order[index + delta];
     const dv = dvRef.current;
     if (!next || !dv) return;
-    scrollerRef.current?.scrollTo({ top: dv.topOf(next.pdf?.from ?? 1), behavior: 'smooth' });
+    scrollerRef.current?.scrollTo({ top: dv.scrollTargetOf(next.pdf?.from ?? 1), behavior: 'smooth' });
   };
 
   // ——— Selection: iPhone's own, with the app's bar below ———
@@ -247,6 +249,9 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
   // ——— Taps: double-tap zoom, tapping a highlight; Markup drawing ———
 
   const lastTap = useRef({ t: 0, x: 0, y: 0 });
+  const chromeTimer = useRef(0);
+  const [chrome, setChrome] = useState(true);
+  const [panel, setPanel] = useState<'contents' | 'more' | null>(null);
   const draft = useRef<{ stroke: Stroke; path: SVGPathElement } | null>(null);
   const drag = useRef({ moved: false, x: 0, y: 0 });
 
@@ -307,6 +312,7 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
     const l = lastTap.current;
     if (now - l.t < 320 && Math.hypot(e.clientX - l.x, e.clientY - l.y) < 30) {
       lastTap.current = { t: 0, x: 0, y: 0 };
+      clearTimeout(chromeTimer.current);
       dv.zoomTo(dv.zoom > 1.2 ? 1 : 2.5, e.clientX, e.clientY);
       return;
     }
@@ -319,6 +325,12 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
       const fy = (p.y / UNITS) * (slot.w / slot.h);
       const h = notes.hl.find((x) => x.pg === p.pg && (x.rects ?? []).some(([rx, ry, rw, rh]) => fx >= rx && fx <= rx + rw && fy >= ry && fy <= ry + rh));
       setHlSel(h ?? null);
+      // A plain tap on the page shows or hides the buttons, like in Preview
+      // (after a moment, in case it's the first half of a double tap).
+      if (!h) {
+        clearTimeout(chromeTimer.current);
+        chromeTimer.current = window.setTimeout(() => setChrome((c) => !c), 330);
+      }
     }
   };
 
@@ -338,50 +350,12 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
     if (r) dvRef.current?.zoomTo(1, r.left + r.width / 2, r.top + r.height / 2);
   };
 
-  const read = !!notesOf(issueId, mp.id).read;
   const bar = sel || hlSel;
+  // Buttons stay visible while something needs them.
+  const showChrome = chrome || markup || !!bar;
 
   return (
-    <div class="reader" role="dialog" aria-label={`${issue.magazine}: ${mp.title}`}>
-      <div class="reader-bar">
-        <div class="reader-top">
-          {markup ? (
-            <>
-              <span />
-              <span class="reader-title">Markup</span>
-              <button type="button" class="nav-btn done" onClick={() => setMarkup(false)}>
-                Done
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button" class="nav-back" onClick={onClose}>
-                <IconBack size={22} />
-                Library
-              </button>
-              <span class="reader-title">
-                <b>{mp.title}</b>
-                <span>
-                  {mp.topic} · {index + 1} of {order.length}
-                </span>
-              </span>
-              <button
-                type="button"
-                class="icon-btn reader-markup"
-                aria-label="Markup"
-                title="Markup"
-                onClick={() => {
-                  clearSel();
-                  setMarkup(true);
-                }}
-              >
-                <IconMarkup size={21} />
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
+    <div class={`reader doc-reader ${showChrome ? '' : 'chrome-hidden'}`} role="dialog" aria-label={`${issue.magazine}: ${mp.title}`}>
       <div
         class={`doc-scroll ${markup ? 'is-markup' : ''}`}
         ref={scrollerRef}
@@ -405,88 +379,181 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
           </div>
         )}
       </div>
-      {!markup && zoomed && (
-        <button type="button" class="zoom-pill doc-zoom" onClick={fit}>
+
+      {/* Floating glass buttons over the page, as in Preview. */}
+      <div class="glass-top">
+        {markup ? (
+          <>
+            <span class="glass-spacer" />
+            <span class="glass glass-title">
+              <b>Markup</b>
+            </span>
+            <button type="button" class="glass glass-pill-btn" onClick={() => setMarkup(false)}>
+              Done
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" class="glass glass-round" onClick={onClose} aria-label="Back to Library">
+              <IconBack size={22} />
+            </button>
+            <button type="button" class="glass glass-title" onClick={() => setPanel('contents')} aria-label="Contents">
+              <b>{mp.title}</b>
+              <IconChevron size={12} style={{ transform: 'rotate(90deg)', flex: 'none' }} />
+            </button>
+            <button type="button" class="glass glass-round" onClick={() => setPanel('more')} aria-label="More">
+              <IconMore size={22} />
+            </button>
+          </>
+        )}
+      </div>
+
+      {!markup && zoomed && !bar && (
+        <button type="button" class="glass glass-pill-btn doc-zoom" onClick={fit}>
           Fit width
         </button>
       )}
 
-      {markup ? (
-        <div class="markup-bar" role="toolbar" aria-label="Markup tools">
-          <div class="markup-row">
-            <button type="button" class="mk-btn" onClick={undo} aria-label="Undo">
-              <IconUndo size={20} />
+      <div class="glass-bottom">
+        {markup ? (
+          <div class="glass markup-glass" role="toolbar" aria-label="Markup tools">
+            <div class="markup-row">
+              <button type="button" class="mk-btn" onClick={undo} aria-label="Undo">
+                <IconUndo size={20} />
+              </button>
+              <button type="button" class="mk-btn" onClick={redo} aria-label="Redo">
+                <IconRedo size={20} />
+              </button>
+              <span class="spacer" />
+              {(['pen', 'marker', 'pencil', 'eraser', 'text'] as Tool[]).map((t) => (
+                <button
+                  type="button"
+                  key={t}
+                  class={`mk-tool mk-${t}`}
+                  aria-pressed={tool === t}
+                  aria-label={t}
+                  title={t}
+                  onClick={() => (tool === t && t !== 'eraser' && t !== 'text' ? setWidthIdx((widthIdx + 1) % 3) : setTool(t))}
+                >
+                  <ToolGlyph tool={t} color={ink} width={t === tool ? widthIdx : 1} />
+                </button>
+              ))}
+              <span class="spacer" />
+            </div>
+            <div class="markup-row inks">
+              {INKS.map((c) => (
+                <button type="button" key={c} class="ink-dot" style={{ background: c }} aria-label={`Colour ${c}`} aria-pressed={ink === c} onClick={() => setInk(c)} />
+              ))}
+              <span class="mk-hint">{tool === 'text' ? 'Tap to add text, tap a note to edit it' : 'Draw with one finger · pinch to zoom'}</span>
+            </div>
+          </div>
+        ) : bar ? (
+          <div class="glass glass-bar sel-glass" role="toolbar" aria-label="Selected text" onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()}>
+            {barColors || hlSel ? (
+              <div class="swatches">
+                {COLORS.map((c) => (
+                  <button type="button" key={c} class={`swatch sw-${c}`} aria-label={`Highlight ${c}`} aria-pressed={hlSel?.color === c} onClick={() => addHighlight(c)} />
+                ))}
+                <button type="button" class="bar-btn" onClick={hlSel ? removeHighlight : () => setBarColors(false)}>
+                  {hlSel ? 'Remove' : 'Cancel'}
+                </button>
+              </div>
+            ) : (
+              <>
+                <button type="button" class="bar-btn" onClick={() => setBarColors(true)}>
+                  <i class="bar-hl" aria-hidden="true" />
+                  Highlight
+                </button>
+                <button type="button" class="bar-btn" onClick={() => openSheet('lookup')}>
+                  Look Up
+                </button>
+                <button type="button" class="bar-btn" onClick={() => openSheet('translate')}>
+                  Translate
+                </button>
+                <button type="button" class="bar-btn strong" onClick={() => openSheet('add')}>
+                  + Words
+                </button>
+                <button type="button" class="bar-btn" aria-label="Speak" onClick={() => speak(selText)}>
+                  <IconSpeaker size={20} />
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div class="glass glass-bar" role="toolbar" aria-label="Reader tools">
+            <button
+              type="button"
+              class="glass-icon"
+              aria-label="Markup"
+              title="Markup"
+              onClick={() => {
+                clearSel();
+                setMarkup(true);
+              }}
+            >
+              <IconMarkup size={24} />
             </button>
-            <button type="button" class="mk-btn" onClick={redo} aria-label="Redo">
-              <IconRedo size={20} />
+            <button type="button" class="glass-icon" aria-label="Previous article" title="Previous article" disabled={index === 0} onClick={() => go(-1)}>
+              <IconChevron size={20} style={{ transform: 'rotate(180deg)' }} />
             </button>
-            <span class="spacer" />
-            {(['pen', 'marker', 'pencil', 'eraser', 'text'] as Tool[]).map((t) => (
+            <button type="button" class="glass-icon" aria-label="Contents" title="Contents" onClick={() => setPanel('contents')}>
+              <IconList size={24} />
+            </button>
+            <button type="button" class="glass-icon" aria-label="Next article" title="Next article" disabled={index === order.length - 1} onClick={() => go(1)}>
+              <IconChevron size={20} />
+            </button>
+            <button type="button" class="glass-icon" aria-label="Save a copy with notes" title="Save a copy with notes" onClick={() => setPanel('more')}>
+              <IconShare size={24} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {panel === 'contents' && (
+        <Modal title={[issue.magazine, issue.issue].filter(Boolean).join(' ')} onClose={() => setPanel(null)}>
+          <div class="list">
+            {order.map((a) => (
               <button
                 type="button"
-                key={t}
-                class={`mk-tool mk-${t}`}
-                aria-pressed={tool === t}
-                aria-label={t}
-                title={t}
-                onClick={() => (tool === t && t !== 'eraser' && t !== 'text' ? setWidthIdx((widthIdx + 1) % 3) : setTool(t))}
+                key={a.id}
+                class="list-item page-row"
+                aria-current={a.id === mp.id ? 'true' : undefined}
+                onClick={() => {
+                  setPanel(null);
+                  const dv = dvRef.current;
+                  if (dv) scrollerRef.current?.scrollTo({ top: dv.scrollTargetOf(a.pdf?.from ?? 1) });
+                }}
               >
-                <ToolGlyph tool={t} color={ink} width={t === tool ? widthIdx : 1} />
+                <span class="list-item-main">
+                  <b>{a.title}</b>
+                  <span>
+                    {a.topic} · {a.pdf && (a.pdf.from === a.pdf.to ? `p. ${a.pdf.from}` : `pp. ${a.pdf.from}–${a.pdf.to}`)}
+                  </span>
+                </span>
+                {notesOf(issueId, a.id).read && <IconCheck class="check" size={18} />}
               </button>
             ))}
-            <span class="spacer" />
           </div>
-          <div class="markup-row inks">
-            {INKS.map((c) => (
-              <button type="button" key={c} class="ink-dot" style={{ background: c }} aria-label={`Colour ${c}`} aria-pressed={ink === c} onClick={() => setInk(c)} />
-            ))}
-            <span class="mk-hint">{tool === 'text' ? 'Tap to add text, tap a note to edit it' : 'Draw with one finger · pinch to zoom · Done to scroll'}</span>
+        </Modal>
+      )}
+      {panel === 'more' && (
+        <Modal title={mp.title} onClose={() => setPanel(null)}>
+          <SaveCopy iss={issue} />
+          <div class="list">
+            <button
+              type="button"
+              class="list-item"
+              onClick={() => {
+                setPanel(null);
+                fit();
+              }}
+            >
+              <span class="list-item-main">
+                <b>Fit page width</b>
+              </span>
+            </button>
           </div>
-        </div>
-      ) : bar ? (
-        <div class="sel-bar" role="toolbar" aria-label="Selected text" onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()}>
-          {barColors || hlSel ? (
-            <div class="swatches">
-              {COLORS.map((c) => (
-                <button type="button" key={c} class={`swatch sw-${c}`} aria-label={`Highlight ${c}`} aria-pressed={hlSel?.color === c} onClick={() => addHighlight(c)} />
-              ))}
-              <button type="button" class="bar-btn" onClick={hlSel ? removeHighlight : () => setBarColors(false)}>
-                {hlSel ? 'Remove' : 'Cancel'}
-              </button>
-            </div>
-          ) : (
-            <>
-              <button type="button" class="bar-btn" onClick={() => setBarColors(true)}>
-                <i class="bar-hl" aria-hidden="true" />
-                Highlight
-              </button>
-              <button type="button" class="bar-btn" onClick={() => openSheet('lookup')}>
-                Look Up
-              </button>
-              <button type="button" class="bar-btn" onClick={() => openSheet('translate')}>
-                Translate
-              </button>
-              <button type="button" class="bar-btn strong" onClick={() => openSheet('add')}>
-                + Words
-              </button>
-              <button type="button" class="bar-btn" aria-label="Speak" onClick={() => speak(selText)}>
-                <IconSpeaker size={20} />
-              </button>
-            </>
-          )}
-        </div>
-      ) : (
-        <div class="reader-foot">
-          <button type="button" class="pager" disabled={index === 0} onClick={() => go(-1)}>
-            <IconChevron size={16} style={{ transform: 'rotate(180deg)' }} />
-            <span class="pager-label">{order[index - 1]?.title ?? ''}</span>
-          </button>
-          <span class={`read-state ${read ? 'is-read' : ''}`}>{read ? 'Read ✓' : 'Hold a word'}</span>
-          <button type="button" class="pager" disabled={index === order.length - 1} onClick={() => go(1)}>
-            <span class="pager-label">{order[index + 1]?.title ?? ''}</span>
-            <IconChevron size={16} />
-          </button>
-        </div>
+        </Modal>
       )}
 
       {sheet?.kind === 'lookup' && <LookupSheet text={sheet.text} sentence={sheet.sentence} onAdd={() => setSheet({ ...sheet, kind: 'add' })} onClose={() => setSheet(null)} />}

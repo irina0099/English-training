@@ -91,7 +91,8 @@ export class DocView {
 
   private layout() {
     const pw = this.pageWidth;
-    let top = 0;
+    // Pages start below the space kept for the floating header (the column's top offset).
+    let top = this.col.offsetTop;
     this.col.style.width = `${pw}px`;
     // Page units in CSS pixels, for text notes and the text layer.
     this.col.style.setProperty('--pu', String(pw / UNITS));
@@ -135,8 +136,13 @@ export class DocView {
     return s ? s.top + s.height : 0;
   }
 
+  /** The scroll position that shows a page's top just under the floating header. */
+  scrollTargetOf(pg: number): number {
+    return this.topOf(pg) - this.col.offsetTop;
+  }
+
   scrollToPage(pg: number, offset = 0) {
-    this.scroller.scrollTop = this.topOf(pg) + offset;
+    this.scroller.scrollTop = this.scrollTargetOf(pg) + offset;
   }
 
   // ——— Drawing what's on screen ———
