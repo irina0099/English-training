@@ -1,6 +1,8 @@
 import { useState } from 'preact/hooks';
 import type { CloudStatus } from '../engine/cloud';
 import { BackupError, exportJson, importJson, replaceData, resetProgress, updateSettings } from '../engine/store';
+import { shareFile } from '../reading/exportpdf';
+import { readingBackup, restoreReading } from '../reading/store';
 import { canSpeak, speak } from '../tts';
 import type { Level } from '../types';
 import { BackButton, ConfirmButton } from './common';
@@ -23,8 +25,11 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
     if (levels.length) updateSettings({ levels });
   };
 
+  /** Progress plus magazine notes (highlights, drawings, text); the magazines' PDFs stay out, they are large. */
+  const backupText = () => JSON.stringify({ ...(JSON.parse(exportJson(d)) as object), reading: readingBackup() });
+
   const copy = async () => {
-    const text = exportJson(d);
+    const text = backupText();
     setBackup(text);
     try {
       await navigator.clipboard.writeText(text);
@@ -34,19 +39,19 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
     }
   };
 
-  const download = () => {
-    const blob = new Blob([exportJson(d)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `english-notebook-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  const download = async () => {
+    const blob = new Blob([backupText()], { type: 'application/json' });
+    // On iPhone this opens the share sheet: "Save to Files" → iCloud Drive.
+    const how = await shareFile(blob, `english-notebook-${new Date().toISOString().slice(0, 10)}.json`);
+    if (how !== 'cancelled') setMessage('Backup saved. It includes your magazine notes, but not the magazines themselves: keep their PDFs too.');
   };
 
   const restore = (text: string) => {
     try {
       replaceData(importJson(text), true);
-      setMessage('Progress restored from the backup.');
+      const parsed = JSON.parse(text) as { reading?: unknown };
+      restoreReading(parsed.reading);
+      setMessage(parsed.reading ? 'Progress and magazine notes restored. If a magazine is missing its file, add its PDF again in Read: its notes will be there.' : 'Progress restored from the backup.');
       setBackup('');
     } catch (e) {
       setMessage(e instanceof BackupError ? e.message : 'Couldn’t read the backup. Check that you copied all of the text.');
@@ -140,7 +145,7 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
           {!IS_ARTIFACT && (
             <button type="button" class="list-item" onClick={download}>
               <span class="list-item-main">
-                <b style={{ color: 'var(--blue)' }}>Download as a file</b>
+                <b style={{ color: 'var(--blue)' }}>Save to Files (iCloud Drive)</b>
               </span>
             </button>
           )}

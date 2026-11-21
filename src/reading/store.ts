@@ -89,8 +89,27 @@ export function getIssue(id: string): Issue | undefined {
   return allIssues().find((i) => i.id === id);
 }
 
-export function addIssue(issue: Issue) {
-  save({ ...data, issues: [...(data.issues ?? []), issue], last: { issue: issue.id, page: issue.pages[0].id } });
+/** Adds a magazine, or puts a fresh file under one added before (its notes stay). Returns the replaced file key. */
+export function addIssue(issue: Issue): string | undefined {
+  const old = (data.issues ?? []).find((i) => i.id === issue.id);
+  const issues = [...(data.issues ?? []).filter((i) => i.id !== issue.id), issue];
+  save({ ...data, issues, last: { issue: issue.id, page: issue.pages[0].id } });
+  return old?.file && old.file !== issue.file ? old.file : undefined;
+}
+
+/** Magazine notes for the backup file: highlights, Markup and text notes, and which magazines they belong to. */
+export function readingBackup(): ReadingData {
+  return { pages: data.pages, issues: data.issues, menu: data.menu };
+}
+
+/** Brings notes back from a backup. Magazines whose PDF isn't on this device yet show up; adding the PDF again opens them with their notes. */
+export function restoreReading(r: unknown) {
+  if (!r || typeof r !== 'object') return;
+  const b = r as ReadingData;
+  const pages = { ...data.pages, ...(typeof b.pages === 'object' ? b.pages : {}) };
+  const mine = data.issues ?? [];
+  const incoming = Array.isArray(b.issues) ? b.issues.filter((i) => i && typeof i.id === 'string' && !mine.some((m) => m.id === i.id)) : [];
+  save({ ...data, pages, issues: [...mine, ...incoming], menu: b.menu ?? data.menu });
 }
 
 export function removeIssue(id: string) {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { packAt } from '../reading/docview';
+import { annotatedPdf, shareFile } from '../reading/exportpdf';
 import { deleteFile, ImportError, importPdf } from '../reading/pdf';
 import { addIssue, allIssues, getIssue, getReading, notesOf, removeIssue, setMenuStyle, subscribeReading } from '../reading/store';
 import type { Issue, MagPage } from '../reading/types';
@@ -53,7 +54,8 @@ export function Library() {
     setError('');
     try {
       const issue = await importPdf(file, setStep);
-      addIssue(issue);
+      const replaced = addIssue(issue);
+      if (replaced) deleteFile(replaced).catch(() => {});
       setOpen(issue.id);
     } catch (e) {
       const why = e instanceof ImportError ? e.message : e instanceof Error ? `${e.name} ${e.message}` : String(e);
@@ -220,6 +222,7 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
             </div>
           </div>
         ))}
+      {open && iss.file && <SaveCopy iss={iss} />}
       {open && iss.file && (
         <ConfirmButton
           class="btn btn-sm btn-ghost"
@@ -232,5 +235,57 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
         />
       )}
     </section>
+  );
+}
+
+/**
+ * "Save a copy with notes": the PDF with highlights, drawings and text notes on its pages,
+ * for iCloud Drive via the share sheet. Two taps, because iPhone opens the share sheet only
+ * straight after a tap, and preparing a large magazine takes a few seconds.
+ */
+function SaveCopy({ iss }: { iss: Issue }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'ready' | 'done' | 'error'>('idle');
+  const [blob, setBlob] = useState<Blob | null>(null);
+  const name = `${[iss.magazine, iss.issue].filter(Boolean).join(' ')} — with notes.pdf`;
+  const notes = notesOf(iss.id, 'pages');
+  const count = notes.hl.length + notes.strokes.length + notes.texts.length;
+
+  const prepare = async () => {
+    setState('busy');
+    try {
+      setBlob(await annotatedPdf(iss, notes));
+      setState('ready');
+    } catch {
+      setState('error');
+    }
+  };
+  const save = async () => {
+    if (!blob) return;
+    const how = await shareFile(blob, name);
+    if (how !== 'cancelled') {
+      setState('done');
+      setBlob(null);
+    }
+  };
+
+  return (
+    <div class="sheet stack-sm save-copy">
+      <b>A copy with your notes</b>
+      <span class="muted small">
+        {count
+          ? `The magazine as a PDF with your ${count} highlights, drawings and notes on its pages. Save it to Files → iCloud Drive; it opens in Preview and Books on any device.`
+          : 'Add highlights, drawings or text notes while reading, then save the magazine with them as a PDF to iCloud Drive.'}
+      </span>
+      {state === 'ready' ? (
+        <button type="button" class="btn btn-primary" onClick={save}>
+          Save to Files…
+        </button>
+      ) : (
+        <button type="button" class="btn" disabled={state === 'busy' || !count} onClick={prepare}>
+          {state === 'busy' ? 'Preparing the copy…' : state === 'done' ? 'Saved ✓ Prepare again' : 'Prepare a copy with notes'}
+        </button>
+      )}
+      {state === 'error' && <p class="error small">Couldn’t make the copy. Try again; if the magazine is very large, close other apps first.</p>}
+    </div>
   );
 }

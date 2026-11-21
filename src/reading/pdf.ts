@@ -88,16 +88,24 @@ async function step<T>(name: string, run: () => Promise<T>): Promise<T> {
   }
 }
 
+/** The magazine's file as saved on this device. */
+export async function fileBytes(key: string): Promise<ArrayBuffer> {
+  const kept = inMemory.get(key);
+  if (kept) return kept.slice(0);
+  const stored = await tx<ArrayBuffer | Blob | undefined>('readonly', (s) => s.get(key));
+  if (!stored) throw new Error('missing');
+  return stored instanceof Blob ? stored.arrayBuffer() : stored;
+}
+
 export function openDoc(key: string): Promise<PDFDocumentProxy> {
   if (!docs.has(key)) {
     const p = (async () => {
       const kept = inMemory.get(key);
-      const stored = kept ?? (await tx<ArrayBuffer | Blob | undefined>('readonly', (s) => s.get(key)));
-      if (!stored) throw new Error('missing');
-      const buf = stored instanceof Blob ? await stored.arrayBuffer() : stored;
+      const buf = kept ? kept.slice(0) : await fileBytes(key);
       const m = await pdfjs();
-      // pdf.js hands the bytes to its worker, so give it a copy and keep the original.
-      return m.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise;
+      // pdf.js hands the bytes over to its worker. Bytes read from storage are a fresh copy,
+      // so a large magazine isn't held in memory twice; a file kept in memory is copied.
+      return m.getDocument({ data: new Uint8Array(buf) }).promise;
     })();
     p.catch(() => docs.delete(key));
     docs.set(key, p);
@@ -118,6 +126,8 @@ export async function importPdf(file: File, onStep: (text: string) => void): Pro
   const buf = await step('read file', () => file.arrayBuffer());
   onStep('Saving it on this device…');
   let saved = true;
+  // Ask the phone to keep the app's data even when space runs low or the app isn't opened for a while.
+  await navigator.storage?.persist?.().catch(() => false);
   try {
     await tx('readwrite', (s) => s.put(buf, key));
   } catch {
@@ -144,7 +154,8 @@ export async function importPdf(file: File, onStep: (text: string) => void): Pro
   onStep('Drawing the cover…');
   const thumb = await renderThumb(first).catch(() => undefined);
   return {
-    id: key,
+    // The same magazine gets the same id when added again, so notes from a backup find it.
+    id: slug(map ? `${map.magazine} ${map.issue}` : `${name} ${doc.numPages}`),
     magazine: map?.magazine ?? name,
     issue: map?.issue ?? '',
     date: map?.date ?? '',
@@ -157,6 +168,12 @@ export async function importPdf(file: File, onStep: (text: string) => void): Pro
     ...(saved ? {} : { unsaved: true }),
   };
 }
+
+const slug = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9а-яё]+/gi, '-')
+    .replace(/^-|-$/g, '') || 'magazine';
 
 /** Articles from the PDF's bookmarks, when it has them. */
 async function fromOutline(doc: PDFDocumentProxy): Promise<MagPage[]> {
