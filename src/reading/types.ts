@@ -23,8 +23,10 @@ export interface Issue {
   pages: MagPage[];
   /** A magazine the learner added: the PDF is kept on this device under this key. */
   file?: string;
-  /** Small picture of the cover, as a data URL. */
+  /** Small picture of the cover, as a data URL: kept only when the device couldn't store it as a file. */
   thumb?: string;
+  /** The cover picture, kept on this device next to the PDF (see `loadThumb`). */
+  thumbFile?: string;
   addedAt?: number;
   /** The device refused to store the file: it works until the app is closed. */
   unsaved?: boolean;

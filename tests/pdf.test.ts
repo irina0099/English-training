@@ -79,16 +79,24 @@ function fakeIdb(opts: { abortWrites?: boolean; loseFiles?: boolean } = {}) {
   const database = {
     transaction: () => {
       const t: Record<string, unknown> = {};
+      // Like a real transaction: it completes (or aborts) once, after all of its requests.
+      const changes: (() => void)[] = [];
+      let open = 0;
+      let wrote = false;
       const run = (req: Record<string, unknown>, result: unknown, write: boolean, apply = () => {}) => {
+        open++;
+        wrote ||= write;
+        changes.push(apply);
         later(() => {
           req.result = result;
           (req.onsuccess as () => void)?.();
+          if (--open) return;
           later(() => {
-            if (write && opts.abortWrites) {
+            if (wrote && opts.abortWrites) {
               t.error = new DOMException('full', 'QuotaExceededError');
               (t.onabort as () => void)?.();
             } else {
-              apply();
+              changes.forEach((f) => f());
               (t.oncomplete as () => void)?.();
             }
           });
@@ -146,5 +154,25 @@ describe('file storage', () => {
     await deleteFile('b');
     await deleteFile('c');
     expect(idb.opens()).toBe(1);
+  });
+
+  it('removes the cover picture together with the magazine', async () => {
+    const idb = fakeIdb();
+    idb.files.set('k', new ArrayBuffer(8));
+    idb.files.set('k#thumb', new ArrayBuffer(4));
+    idb.files.set('other', new ArrayBuffer(8));
+    const { deleteFile } = await freshPdf();
+    await deleteFile('k');
+    expect([...idb.files.keys()]).toEqual(['other']);
+  });
+
+  it('gives the cover picture as a URL, or nothing when there is none', async () => {
+    const idb = fakeIdb();
+    idb.files.set('k#thumb', new ArrayBuffer(4));
+    const { loadThumb } = await freshPdf();
+    const url = await loadThumb('k');
+    expect(url).toMatch(/^blob:/);
+    URL.revokeObjectURL(url!);
+    expect(await loadThumb('missing')).toBeNull();
   });
 });

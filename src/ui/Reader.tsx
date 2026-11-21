@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { saveCustomWord } from '../engine/store';
+import { saveCustomWord, WORDS_FULL } from '../engine/store';
 import { createCustomWord, sameWord } from '../engine/words';
 import { define, findKnown, googleTranslateUrl, lemmaCandidates, translate, type Definition } from '../reading/lookup';
 import { getIssue, getReading, markRead, notesOf, setLast, subscribeReading, updateNotes } from '../reading/store';
@@ -144,6 +144,8 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       setHeight(h);
       setLayoutTick((t) => t + 1);
     };
+    // Only the app's own articles carry HTML (magazines from PDF have none). Anything that brings
+    // articles from outside must clean their HTML first (e.g. DOMPurify): this would run their scripts.
     el.innerHTML = isDoc ? '' : mp.html;
     idxRef.current = indexText(el);
     setLoadError(false);
@@ -161,7 +163,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
           const slot = pv.slots[start - 1];
           setView(clamp({ ...v, y: -(slot?.offsetTop ?? 0) * v.s }, true, el.offsetHeight));
           updateVisible();
-          pv.buildText(start, () => {}, () => {
+          pv.buildText(start, () => {
             if (!alive) return;
             idxRef.current = indexText(el);
             setTextReady(true);
@@ -1163,6 +1165,7 @@ function AddWordSheet({ text, sentence, issue, page, at, onClose }: { text: stri
   const [ru, setRu] = useState(known?.ru ?? '');
   const [exRu, setExRu] = useState('');
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
   const auto = useTranslation(known ? '' : text);
   const autoSentence = useTranslation(sentence);
   useEffect(() => {
@@ -1183,7 +1186,7 @@ function AddWordSheet({ text, sentence, issue, page, at, onClose }: { text: stri
       saveCustomWord({ ...mine, ctx: [ctx, ...others].slice(0, 8) });
     } else {
       const w = createCustomWord({ en, ru, ex: sentence, exRu, level: null });
-      saveCustomWord({ ...w, ctx: [ctx] });
+      if (!saveCustomWord({ ...w, ctx: [ctx] })) return setError(WORDS_FULL);
     }
     setSaved(true);
     setTimeout(onClose, 700);
@@ -1210,6 +1213,7 @@ function AddWordSheet({ text, sentence, issue, page, at, onClose }: { text: stri
           <label for="r-exru">Sentence translation</label>
           <input id="r-exru" value={exRu} onInput={(e) => setExRu(e.currentTarget.value)} autocomplete="off" />
         </div>
+        {error && <p class="error">{error}</p>}
         <button type="submit" class={`btn ${saved ? 'btn-success' : 'btn-primary'}`} disabled={!en.trim() || !ru.trim() || saved}>
           {saved ? 'Saved ✓' : mine ? 'Add this sentence to the word' : 'Save word'}
         </button>

@@ -9,7 +9,7 @@ import { Dictionary } from './Dictionary';
 import { Flashcards, type Deck } from './Flashcards';
 import { Games, type GameId } from './Games';
 import { Home } from './Home';
-import { useData } from './hooks';
+import { useData, useStorageFull } from './hooks';
 import { IconBook, IconHome, IconNews, IconPen, IconRule } from './icons';
 import { getIssue } from '../reading/store';
 import { Library } from './Library';
@@ -42,12 +42,17 @@ export function App() {
   const [rule, setRule] = useState<string | null>(null);
   const [reader, setReader] = useState<{ issue: string; page: string; focus?: number; key: number } | null>(null);
   const [cloud, setCloud] = useState<CloudStatus>('local');
+  const storageFull = useStorageFull();
 
   useEffect(() => {
-    startCloudSync(setCloud);
+    const sync = new AbortController();
+    startCloudSync(setCloud, sync.signal);
     const onHash = () => setTab(readHash());
     window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
+    return () => {
+      sync.abort();
+      window.removeEventListener('hashchange', onHash);
+    };
   }, []);
 
   const nav = useMemo<Nav>(
@@ -102,6 +107,13 @@ export function App() {
   return (
     <NavContext.Provider value={nav}>
       <div class="shell">
+        {storageFull && (
+          <p class="storage-warning" role="alert">
+            {cloud === 'synced'
+              ? 'This browser has no room left. Your practice is saved to your account, but new reading notes may be lost when you close the app. Remove a magazine you’ve finished to make room.'
+              : 'This browser has no room left, so new progress and notes may be lost when you close the app. Save a backup in Settings, or remove a magazine you’ve finished.'}
+          </p>
+        )}
         {tab === 'read' && reader && getIssue(reader.issue) ? (
           // The page opens inside the app, above the tab bar, not as a separate screen.
           <Reader key={reader.key} issueId={reader.issue} pageId={reader.page} focus={reader.focus} onClose={() => setReader(null)} />

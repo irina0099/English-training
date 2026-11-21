@@ -1,6 +1,7 @@
 import { activeItems } from '../content';
 import type { AppData, CardState, DayStat, Grade, Item, Level, Mistake, Settings, VocabItem, Verdict } from '../types';
 import { review, stage } from './fsrs';
+import { saveItem } from '../storage';
 import { appendMistake } from './mistakes';
 import type { Exercise } from './session';
 
@@ -124,12 +125,8 @@ function loadLocal(): AppData {
 }
 
 function saveLocal(d: AppData): boolean {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
-    return true;
-  } catch {
-    return false;
-  }
+  // A failure is reported to the app (storage.ts), which tells the learner.
+  return saveItem(STORAGE_KEY, JSON.stringify(d));
 }
 
 let data: AppData = typeof window === 'undefined' ? defaultData() : loadLocal();
@@ -281,14 +278,31 @@ export function updateSettings(patch: Partial<Settings>) {
   commit({ settings: { ...data.settings, ...patch } }, ['progress']);
 }
 
-export function saveCustomWord(word: VocabItem) {
+/** The message shown when the learner's own list is full. */
+export const WORDS_FULL = `You can keep up to ${MAX_CUSTOM_WORDS} of your own words. Delete some you know well to add new ones.`;
+
+/** Adds a word or updates one already saved; returns false when the list is full and the word is new. */
+export function saveCustomWord(word: VocabItem): boolean {
   const exists = data.custom.some((w) => w.id === word.id);
+  if (!exists && data.custom.length >= MAX_CUSTOM_WORDS) return false;
   const custom = exists ? data.custom.map((w) => (w.id === word.id ? word : w)) : [...data.custom, word];
   commit({ custom }, ['words']);
+  return true;
 }
 
-export function saveCustomWords(words: VocabItem[]) {
-  commit({ custom: [...data.custom, ...words] }, ['words']);
+/** Adds new words, skipping ones already saved, up to the limit; returns how many were added. */
+export function saveCustomWords(words: VocabItem[]): number {
+  const ids = new Set(data.custom.map((w) => w.id));
+  const room = MAX_CUSTOM_WORDS - data.custom.length;
+  const fresh: VocabItem[] = [];
+  for (const w of words) {
+    if (fresh.length >= room) break;
+    if (ids.has(w.id)) continue;
+    ids.add(w.id);
+    fresh.push(w);
+  }
+  if (fresh.length) commit({ custom: [...data.custom, ...fresh] }, ['words']);
+  return fresh.length;
 }
 
 export function deleteCustomWord(id: string) {

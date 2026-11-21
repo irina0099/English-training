@@ -82,11 +82,23 @@ async function tx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRe
   });
 }
 
-/** Removes a magazine's file from the device and from memory. */
+/** Removes a magazine's file and its cover picture from the device and from memory. */
 export async function deleteFile(key: string): Promise<void> {
   await closeDoc(key);
   inMemory.delete(key);
-  await tx('readwrite', (s) => s.delete(key));
+  await tx('readwrite', (s) => {
+    s.delete(thumbKey(key));
+    return s.delete(key);
+  });
+}
+
+/** Cover pictures live next to their PDF, not in localStorage, where room is short. */
+const thumbKey = (file: string) => `${file}#thumb`;
+
+/** The cover picture of a magazine, as an object URL for an <img>; revoke it when done. */
+export async function loadThumb(file: string): Promise<string | null> {
+  const bytes = await tx<ArrayBuffer | undefined>('readonly', (s) => s.get(thumbKey(file))).catch(() => undefined);
+  return bytes ? URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' })) : null;
 }
 
 // ——— Documents ———
@@ -194,7 +206,7 @@ async function readIssue(key: string, file: File, saved: boolean, onStep: (text:
   }
 
   onStep('Drawing the cover…');
-  const thumb = await renderThumb(first).catch(() => undefined);
+  const cover = await saveThumb(first, key, saved).catch(() => ({}));
   return {
     id: key,
     magazine: map?.magazine ?? name,
@@ -204,7 +216,7 @@ async function readIssue(key: string, file: File, saved: boolean, onStep: (text:
     cover: map?.cover ?? { bg: '#2c2c2e', fg: '#ffffff', accent: '#ff9500' },
     pages,
     file: key,
-    thumb,
+    ...cover,
     addedAt: Date.now(),
     ...(saved ? {} : { unsaved: true }),
   };
@@ -235,20 +247,39 @@ async function fromOutline(doc: PDFDocumentProxy): Promise<MagPage[]> {
   }));
 }
 
-async function renderThumb(page: PDFPageProxy): Promise<string> {
-  const vp = page.getViewport({ scale: 1 });
-  const scale = 240 / vp.width;
-  const viewport = page.getViewport({ scale });
+/**
+ * Draws the cover small and keeps it next to the PDF. Only when the device can't store it
+ * there does it go into the magazine's record as a data URL.
+ */
+async function saveThumb(page: PDFPageProxy, key: string, fileSaved: boolean): Promise<Pick<Issue, 'thumb' | 'thumbFile'>> {
+  const viewport = page.getViewport({ scale: 240 / page.getViewport({ scale: 1 }).width });
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(viewport.width);
   canvas.height = Math.round(viewport.height);
-  await page.render({ canvas, viewport }).promise;
-  const url = canvas.toDataURL('image/jpeg', 0.72);
-  canvas.width = canvas.height = 0;
-  return url;
+  try {
+    await page.render({ canvas, viewport }).promise;
+    if (fileSaved) {
+      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.72));
+      if (blob) {
+        // Raw bytes, as for the PDF: Safari on iPhone can fail to keep a Blob in IndexedDB.
+        const bytes = await blob.arrayBuffer();
+        const stored = await tx('readwrite', (s) => s.put(bytes, thumbKey(key))).then(
+          () => true,
+          () => false,
+        );
+        if (stored) return { thumbFile: key };
+      }
+    }
+    return { thumb: canvas.toDataURL('image/jpeg', 0.72) };
+  } finally {
+    canvas.width = canvas.height = 0;
+  }
 }
 
 // ——— Drawing pages ———
+
+/** The page at the layout width (PAGE_WIDTH), the size every page is placed and its text laid at. */
+const fitViewport = (page: PDFPageProxy) => page.getViewport({ scale: PAGE_WIDTH / page.getViewport({ scale: 1 }).width });
 
 /** Safari's limit for one canvas is about 16.7 million pixels. */
 const MAX_PIXELS = 16_000_000;
@@ -294,10 +325,12 @@ export class PdfView {
   async layout(gap: number): Promise<number> {
     this.m = await pdfjs();
     const doc = await openDoc(this.key);
-    for (let n = 1; n <= doc.numPages; n++) {
-      const page = await doc.getPage(n);
-      if (!this.alive) return 0;
-      const vp = page.getViewport({ scale: PAGE_WIDTH / page.getViewport({ scale: 1 }).width });
+    // All at once: one by one, a long issue waited for the worker hundreds of times in a row.
+    const pages = await Promise.all(Array.from({ length: doc.numPages }, (_, i) => doc.getPage(i + 1)));
+    if (!this.alive) return 0;
+    for (const [i, page] of pages.entries()) {
+      const n = i + 1;
+      const vp = fitViewport(page);
       const slot = document.createElement('div');
       slot.className = 'pdf-page';
       slot.style.height = `${vp.height}px`;
@@ -311,12 +344,12 @@ export class PdfView {
   }
 
   /** Builds the text layers, nearest pages first; `onDone` runs when every page has its text. */
-  async buildText(first: number, onPage: () => void, onDone: () => void) {
+  async buildText(first: number, onDone: () => void) {
     const order = this.slots.map((_, i) => i).sort((a, b) => Math.abs(a - (first - 1)) - Math.abs(b - (first - 1)));
     for (const i of order) {
       if (!this.alive) return;
       const page = this.pages[i];
-      const vp = page.getViewport({ scale: PAGE_WIDTH / page.getViewport({ scale: 1 }).width });
+      const vp = fitViewport(page);
       const text = document.createElement('div');
       text.className = 'pdf-text';
       try {
@@ -326,7 +359,6 @@ export class PdfView {
       }
       if (!this.alive) return;
       this.slots[i].appendChild(text);
-      onPage();
       // Let the page breathe between pages: scrolling stays smooth while text is prepared.
       await new Promise((r) => setTimeout(r, 0));
     }
@@ -400,12 +432,13 @@ export class PdfView {
     if (this.sharp && this.sharp !== n) {
       const prev = this.sharp;
       this.sharp = null;
-      if (Number(this.slots[prev - 1]?.dataset.width) > this.baseWidth * 1.15) await this.paint(prev, this.baseWidth);
+      if (Number(this.slots[prev - 1]?.dataset.width) > this.baseWidth * 1.15) await this.paint(prev, this.baseWidth).catch(() => false);
     }
     const slot = this.slots[n - 1];
     if (!slot?.querySelector('.pdf-img')) return;
     if (width <= Number(slot.dataset.width ?? 0) * 1.15) return;
-    if (await this.paint(n, width)) this.sharp = n;
+    // A sharper picture is a bonus: if it can't be drawn, the normal one stays.
+    if (await this.paint(n, width).catch(() => false)) this.sharp = n;
   }
 
   destroy() {

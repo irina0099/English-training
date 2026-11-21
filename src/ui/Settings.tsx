@@ -16,6 +16,8 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
   const s = d.settings;
   const [backup, setBackup] = useState('');
   const [message, setMessage] = useState('');
+  /** A checked backup waiting for "Replace" while the progress is synced to the account. */
+  const [pending, setPending] = useState<ReturnType<typeof importJson> | null>(null);
 
   const toggleLevel = (l: Level) => {
     const has = s.levels.includes(l);
@@ -43,11 +45,21 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 
+  const apply = (next: ReturnType<typeof importJson>) => {
+    replaceData(next, true);
+    setPending(null);
+    setMessage('Progress restored from the backup.');
+    setBackup('');
+  };
+
   const restore = (text: string) => {
     try {
-      replaceData(importJson(text), true);
-      setMessage('Progress restored from the backup.');
-      setBackup('');
+      const next = importJson(text);
+      // Synced progress is replaced on every device: ask first.
+      if (cloud === 'synced') {
+        setPending(next);
+        setMessage('');
+      } else apply(next);
     } catch (e) {
       setMessage(e instanceof BackupError ? e.message : 'Couldn’t read the backup. Check that you copied all of the text.');
     }
@@ -176,6 +188,19 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
         <button type="button" class="btn" disabled={!backup.trim()} onClick={() => restore(backup)}>
           Restore from text
         </button>
+        {pending && (
+          <div class="stack-sm">
+            <p class="footnote">The backup will replace your progress on every device that uses this account, including anything newer than the backup.</p>
+            <div class="row">
+              <button type="button" class="btn btn-danger" style={{ flex: 1 }} onClick={() => apply(pending)}>
+                Replace my progress
+              </button>
+              <button type="button" class="btn" style={{ flex: 1 }} onClick={() => setPending(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         {message && <p class="footnote">{message}</p>}
       </section>
 

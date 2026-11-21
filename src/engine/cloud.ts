@@ -56,14 +56,20 @@ function merge(d: AppData, s: Section, body: Record<string, unknown>): AppData {
   }
 }
 
-export async function startCloudSync(onStatus: (s: CloudStatus) => void): Promise<void> {
+/** Starts syncing; aborting `signal` stops it (no more reads, writes or status updates). */
+export async function startCloudSync(onStatus: (s: CloudStatus) => void, signal?: AbortSignal): Promise<void> {
   const runtime = (window as unknown as { claude?: ClaudeRuntime }).claude;
-  if (!runtime?.use) return;
+  if (!runtime?.use || signal?.aborted) return;
+  const report = onStatus;
+  onStatus = (s) => {
+    if (!signal?.aborted) report(s);
+  };
   onStatus('connecting');
   let off: (() => void) | undefined;
   try {
     const [db, user] = (await Promise.all([runtime.use('db'), runtime.use('user')])) as [Db | null, UserCap | null];
     const uid = db && user ? await user.id() : null;
+    if (signal?.aborted) return;
     if (!db || !uid) {
       onStatus('local');
       return;
@@ -91,6 +97,7 @@ export async function startCloudSync(onStatus: (s: CloudStatus) => void): Promis
       const sections = [...pending];
       pending.clear();
       chain = chain.then(async () => {
+        if (signal?.aborted) return;
         let failed = false;
         for (const s of sections) {
           try {
@@ -117,8 +124,14 @@ export async function startCloudSync(onStatus: (s: CloudStatus) => void): Promis
       clearTimeout(timer);
       timer = setTimeout(flush, WRITE_DELAY);
     });
-    window.addEventListener('pagehide', () => {
+    const onHide = () => {
       if (ready && pending.size) flush();
+    };
+    window.addEventListener('pagehide', onHide);
+    signal?.addEventListener('abort', () => {
+      off?.();
+      clearTimeout(timer);
+      window.removeEventListener('pagehide', onHide);
     });
 
     const remote = await Promise.all(
@@ -127,6 +140,7 @@ export async function startCloudSync(onStatus: (s: CloudStatus) => void): Promis
         return [s, snap.exists ? snap.data() : undefined] as const;
       }),
     );
+    if (signal?.aborted) return;
     // Taken only now, with no await before replaceData: nothing the learner did meanwhile is lost.
     let next = getData();
     const toWrite: Section[] = [];

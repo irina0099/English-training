@@ -1,3 +1,4 @@
+import { saveItem } from '../storage';
 import { ISSUES } from './issues';
 import type { Issue, PageNotes } from './types';
 
@@ -45,11 +46,8 @@ export function subscribeReading(fn: () => void): () => void {
 
 function save(next: ReadingData) {
   data = next;
-  try {
-    localStorage.setItem(KEY, JSON.stringify(data));
-  } catch {
-    // Storage full or blocked: the notes stay for this visit.
-  }
+  // Storage full or blocked: the notes stay for this visit, and the app says so.
+  saveItem(KEY, JSON.stringify(data));
   for (const fn of listeners) fn();
 }
 
@@ -86,7 +84,7 @@ export function allIssues(d: ReadingData = data): Issue[] {
 }
 
 export function getIssue(id: string): Issue | undefined {
-  return allIssues().find((i) => i.id === id);
+  return (data.issues ?? []).find((i) => i.id === id) ?? ISSUES.find((i) => i.id === id);
 }
 
 export function addIssue(issue: Issue) {

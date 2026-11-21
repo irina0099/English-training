@@ -235,6 +235,16 @@ p {
   background: var(--bg);
 }
 
+.storage-warning {
+  flex: none;
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--orange-text);
+  background: var(--orange-tint);
+}
+
 .scroller {
   flex: 1 1 auto;
   min-height: 0;

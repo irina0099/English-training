@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, importJson, sanitize } from '../src/engine/store';
+import { afterEach, describe, expect, it } from 'vitest';
+import { DEFAULT_SETTINGS, defaultData, getData, importJson, MAX_CUSTOM_WORDS, replaceData, sanitize, saveCustomWord, saveCustomWords } from '../src/engine/store';
+import type { VocabItem } from '../src/types';
+
+const word = (id: string): VocabItem => ({ id, kind: 'word', en: id, ru: id, level: null, custom: true });
+
+afterEach(() => replaceData(defaultData()));
 
 describe('sanitize', () => {
   it('drops cards that would break the schedule and fills in missing counters', () => {
@@ -48,5 +53,22 @@ describe('sanitize', () => {
     };
     const d = importJson(JSON.stringify(backup));
     expect({ ...d, stamps: backup.stamps }).toEqual(backup);
+  });
+});
+
+describe('own words', () => {
+  it('refuses a new word when the list is full, but still updates saved ones', () => {
+    replaceData({ ...defaultData(), custom: Array.from({ length: MAX_CUSTOM_WORDS }, (_, i) => word(`w${i}`)) });
+    expect(saveCustomWord(word('new'))).toBe(false);
+    expect(getData().custom.some((w) => w.id === 'new')).toBe(false);
+    expect(saveCustomWord({ ...word('w0'), ru: 'другое' })).toBe(true);
+    expect(getData().custom[0].ru).toBe('другое');
+  });
+
+  it('adds a list of words once each and only as many as fit', () => {
+    replaceData({ ...defaultData(), custom: Array.from({ length: MAX_CUSTOM_WORDS - 2 }, (_, i) => word(`w${i}`)) });
+    const added = saveCustomWords([word('w0'), word('a'), word('a'), word('b'), word('c')]);
+    expect(added).toBe(2);
+    expect(getData().custom.slice(-2).map((w) => w.id)).toEqual(['a', 'b']);
   });
 });

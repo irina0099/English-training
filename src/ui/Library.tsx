@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { deleteFile, ImportError, importPdf } from '../reading/pdf';
+import { deleteFile, ImportError, importPdf, loadThumb } from '../reading/pdf';
 import { addIssue, allIssues, getIssue, getReading, notesOf, removeIssue, setMenuStyle, subscribeReading } from '../reading/store';
 import type { Issue, MagPage } from '../reading/types';
 import { ConfirmButton } from './common';
@@ -11,6 +11,26 @@ export function useReading() {
   const [, bump] = useState(0);
   useEffect(() => subscribeReading(() => bump((x) => x + 1)), []);
   return getReading();
+}
+
+/** The cover picture: kept in the magazine's record (older imports) or as a file next to the PDF. */
+function useThumb(iss: Issue): string | undefined {
+  const [url, setUrl] = useState<string | undefined>(iss.thumb);
+  useEffect(() => {
+    if (iss.thumb || !iss.thumbFile) return setUrl(iss.thumb);
+    let alive = true;
+    let made: string | null = null;
+    loadThumb(iss.thumbFile).then((u) => {
+      made = u;
+      if (alive) setUrl(u ?? undefined);
+      else if (u) URL.revokeObjectURL(u);
+    });
+    return () => {
+      alive = false;
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [iss.thumb, iss.thumbFile]);
+  return url;
 }
 
 function articleAt(iss: Issue, pg: number): MagPage {
@@ -160,12 +180,13 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
   const d = useData();
   const read = iss.pages.filter((p) => notesOf(iss.id, p.id).read).length;
   const groups = byTopic(iss.pages);
+  const thumb = useThumb(iss);
   return (
     <section class="section" aria-label={`${iss.magazine} ${iss.issue}`}>
       <div class="issue-card sheet">
-        {iss.thumb ? (
+        {thumb ? (
           <button type="button" class="cover-img" onClick={() => nav.openReader(iss.id, iss.pages[0].id)} aria-label={`Open ${iss.magazine}`}>
-            <img src={iss.thumb} alt="" />
+            <img src={thumb} alt="" />
           </button>
         ) : (
           <button

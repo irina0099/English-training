@@ -4,7 +4,7 @@ import { isFixed, mistakesByItem } from '../engine/mistakes';
 import { stage } from '../engine/fsrs';
 import { makeRng, randomSeed, shuffle } from '../engine/random';
 import { gapParts } from '../engine/session';
-import { deleteCustomWord, getData, MAX_CUSTOM_WORDS, saveCustomWord, saveCustomWords } from '../engine/store';
+import { deleteCustomWord, getData, MAX_CUSTOM_WORDS, saveCustomWord, saveCustomWords, WORDS_FULL } from '../engine/store';
 import { createCustomWord, markTarget, parseBulk, sameWord, type WordDraft } from '../engine/words';
 import type { Level, VocabItem } from '../types';
 import { ConfirmButton, count, dueLabel, LevelChip, Modal, StageDot, WordCard } from './common';
@@ -272,8 +272,7 @@ function OneWordForm({ word, custom, onDone }: { word: VocabItem | null; custom:
     if (!draft.en.trim() || !draft.ru.trim()) return setError('Add both the word and its translation.');
     if (/[а-яё]/i.test(draft.en)) return setError('The first field is for the English word or phrase.');
     if (!word && custom.some((w) => sameWord(w.en, draft.en))) return setError('This word is already in your list.');
-    if (!word && custom.length >= MAX_CUSTOM_WORDS) return setError(`You can keep up to ${MAX_CUSTOM_WORDS} of your own words. Delete some you know well to add new ones.`);
-    saveCustomWord(createCustomWord(draft, word ?? undefined));
+    if (!saveCustomWord(createCustomWord(draft, word ?? undefined))) return setError(WORDS_FULL);
     onDone();
   };
 

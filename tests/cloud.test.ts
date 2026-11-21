@@ -22,7 +22,7 @@ function fakeCloud(remote: Record<string, Record<string, unknown>> = {}, failWri
     }),
   };
   const runtime = { use: async (name: string) => (name === 'db' ? db : { id: async () => 'u1' }) };
-  (globalThis as unknown as { window: unknown }).window = { claude: runtime, addEventListener() {} };
+  (globalThis as unknown as { window: unknown }).window = { claude: runtime, addEventListener() {}, removeEventListener() {} };
   return { stored, release };
 }
 
@@ -77,5 +77,22 @@ describe('startCloudSync', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(statuses.at(-1)).toBe('synced');
     expect((stored.progress?.settings as { sessionSize: number }).sessionSize).toBe(20);
+  });
+
+  it('stops when asked: no more writes or status updates', async () => {
+    const { stored, release } = fakeCloud();
+    const statuses: CloudStatus[] = [];
+    const stop = new AbortController();
+    const done = startCloudSync((s) => statuses.push(s), stop.signal);
+    release();
+    await done;
+    await new Promise((r) => setTimeout(r, 0));
+    const seen = statuses.length;
+
+    stop.abort();
+    updateSettings({ sessionSize: 25 });
+    await new Promise((r) => setTimeout(r, 1600));
+    expect(stored.progress).toBeUndefined();
+    expect(statuses.length).toBe(seen);
   });
 });
