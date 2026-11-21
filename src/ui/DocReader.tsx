@@ -225,18 +225,32 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
     updateNotes(issueId, UNIT, next);
   };
 
+  /** Highlights the selected words already touch: a new colour replaces them, and they can be removed. */
+  const touched = sel ? notes.hl.filter((h) => h.pg === sel.pg && h.end > sel.start && h.start < sel.end) : [];
+
+  const stackOf = (h: Highlight) => notes.hl.filter((x) => x.pg === h.pg && x.end > h.start && x.start < h.end);
+
   const addHighlight = (color: HighlightColor) => {
     if (hlSel) {
-      saveNotes({ hl: notes.hl.map((h) => (h.id === hlSel.id ? { ...h, color } : h)) });
+      // Highlights stacked on the same words (from before) become one, in the new colour.
+      const stack = stackOf(hlSel);
+      saveNotes({ hl: [...notes.hl.filter((h) => !stack.includes(h)), { ...hlSel, color }] });
     } else if (sel && selIdx) {
-      saveNotes({ hl: [...notes.hl, { id: uid(), pg: sel.pg, start: sel.start, end: sel.end, rects: sel.rects, color, text: selText, at: Date.now() }] });
+      // One highlight over the selection and anything it overlaps, in the new colour.
+      const start = Math.min(sel.start, ...touched.map((h) => h.start));
+      const end = Math.max(sel.end, ...touched.map((h) => h.end));
+      const range = rangeFor(selIdx, start, end);
+      const rects = range && dvRef.current ? dvRef.current.rectsOf(sel.pg, range) : sel.rects;
+      const kept = notes.hl.filter((h) => !touched.includes(h));
+      saveNotes({ hl: [...kept, { id: uid(), pg: sel.pg, start, end, rects, color, text: selIdx.text.slice(start, end).trim(), at: Date.now() }] });
     }
     clearSel();
   };
 
   const removeHighlight = () => {
-    if (!hlSel) return;
-    saveNotes({ hl: notes.hl.filter((h) => h.id !== hlSel.id) });
+    const gone = hlSel ? stackOf(hlSel) : touched;
+    if (!gone.length) return;
+    saveNotes({ hl: notes.hl.filter((h) => !gone.some((g) => g.id === h.id)) });
     clearSel();
   };
 
@@ -452,16 +466,23 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
             {barColors || hlSel ? (
               <div class="swatches">
                 {COLORS.map((c) => (
-                  <button type="button" key={c} class={`swatch sw-${c}`} aria-label={`Highlight ${c}`} aria-pressed={hlSel?.color === c} onClick={() => addHighlight(c)} />
+                  <button type="button" key={c} class={`swatch sw-${c}`} aria-label={`Highlight ${c}`} aria-pressed={(hlSel ?? touched[0])?.color === c} onClick={() => addHighlight(c)} />
                 ))}
-                <button type="button" class="bar-btn" onClick={hlSel ? removeHighlight : () => setBarColors(false)}>
-                  {hlSel ? 'Remove' : 'Cancel'}
-                </button>
+                {(hlSel || touched.length > 0) && (
+                  <button type="button" class="bar-btn remove" onClick={removeHighlight}>
+                    Remove
+                  </button>
+                )}
+                {!hlSel && (
+                  <button type="button" class="bar-btn" onClick={() => setBarColors(false)}>
+                    Cancel
+                  </button>
+                )}
               </div>
             ) : (
               <>
                 <button type="button" class="bar-btn" onClick={() => setBarColors(true)}>
-                  <i class="bar-hl" aria-hidden="true" />
+                  <i class={`bar-hl ${touched.length ? `on-${touched[0].color}` : ''}`} aria-hidden="true" />
                   Highlight
                 </button>
                 <button type="button" class="bar-btn" onClick={() => openSheet('lookup')}>

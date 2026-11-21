@@ -1763,3 +1763,20 @@ body > .modal-backdrop {
 .page-row[aria-current='true'] b {
   color: var(--blue);
 }
+
+.bar-btn.remove {
+  color: var(--red);
+}
+
+.bar-hl.on-green {
+  background: #34c759;
+}
+.bar-hl.on-blue {
+  background: #5ac8fa;
+}
+.bar-hl.on-pink {
+  background: #ff6482;
+}
+.bar-hl.on-underline {
+  background: linear-gradient(transparent 60%, #ff3b30 60%) #fff;
+}
