@@ -371,40 +371,46 @@ function markLineWidths(el: HTMLElement, items: Awaited<ReturnType<PDFPageProxy[
  * a little different, so lines ended off the printed ones and the words inside drifted with them
  * (highlights and selections sat beside the words). Once the layer is on the page, each line is
  * measured as drawn and made exactly as wide as the printed one, in two parts:
- * - letters are stretched by one factor for the page: the stand-in font's difference from the
- *   magazine's, taken from the page's tightest lines (they have the least extra space);
+ * - letters are stretched by one factor per font and size (headlines and body text differ):
+ *   the stand-in font's difference from the magazine's, from its tightest lines;
  * - what's left goes into the spaces, as in justified text, where the gaps between words widen.
- * The browser doesn't draw text at a new size in exact proportion, so this runs again after zooming.
+ * The layer keeps one size and is only scaled when zooming (see DocView), so this runs once.
  */
 export function fitLineWidths(layer: HTMLElement) {
-  const pageWidth = layer.getBoundingClientRect().width;
-  if (!pageWidth) return;
-  const minFont = Number(getComputedStyle(layer).getPropertyValue('--min-font-size')) || 1;
+  const own = layer.offsetWidth;
+  const shown = layer.getBoundingClientRect().width;
+  const total = Number(layer.style.getPropertyValue('--total-scale-factor'));
+  if (!own || !shown || !total) return;
+  const k = shown / own;
   const spans = [...layer.querySelectorAll<HTMLElement>('span[data-w]')];
-  // Fitted again after zooming: the spacing set last time comes off before measuring.
   // All changes, then all measurements, then all changes: one layout instead of one per line.
   for (const span of spans) span.style.wordSpacing = '';
   const lines = spans.map((span) => {
     const scale = Number(span.style.getPropertyValue('--scale-x')) || 1;
-    const natural = span.getBoundingClientRect().width / scale;
+    const fontHeight = parseFloat(span.style.getPropertyValue('--font-height')) || 0;
     const text = span.textContent ?? '';
     return {
       span,
-      natural,
-      target: Number(span.dataset.w) * pageWidth,
+      natural: span.getBoundingClientRect().width / k / scale,
+      target: Number(span.dataset.w) * own,
       gaps: (text.trim().match(/ +/g) ?? []).length,
-      font: parseFloat(getComputedStyle(span).fontSize) / minFont,
+      font: fontHeight * total,
+      group: `${span.style.fontFamily}|${Math.round(fontHeight * 2)}`,
     };
   });
-  const ratios = lines.filter((l) => l.natural && l.gaps >= 3).map((l) => l.target / l.natural).sort((a, b) => a - b);
-  const letters = ratios.length ? ratios[Math.floor(ratios.length * 0.2)] : 0;
+  // The letters' factor for each font and size, from its tightest lines (least extra space).
+  const factor = new Map<string, number>();
+  const byGroup = new Map<string, number[]>();
+  for (const l of lines) if (l.natural && l.gaps >= 3) byGroup.set(l.group, [...(byGroup.get(l.group) ?? []), l.target / l.natural]);
+  for (const [g, r] of byGroup) if (r.length >= 2) factor.set(g, r.sort((a, b) => a - b)[Math.floor(r.length * 0.2)]);
   for (const l of lines) {
     if (!l.natural || !l.target) continue;
     const plain = l.target / l.natural;
     if (plain < 0.5 || plain > 2) continue;
+    const letters = factor.get(l.group) ?? 0;
     const extra = letters && l.gaps ? l.target - letters * l.natural : -1;
     if (extra >= 0 && l.font) {
-      // Letters by the page's factor, the rest spread over the gaps between words.
+      // Letters by the font's factor, the rest spread over the gaps between words.
       l.span.style.setProperty('--scale-x', String(letters));
       l.span.style.wordSpacing = `${(extra / l.gaps / letters / l.font).toFixed(4)}em`;
     } else l.span.style.setProperty('--scale-x', String(plain));

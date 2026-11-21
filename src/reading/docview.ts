@@ -13,6 +13,12 @@ export const UNITS = 600;
 const GAP = 8;
 const MIN_ZOOM = 1;
 export const MAX_ZOOM = 4;
+/**
+ * The invisible text over a page is laid out once at this width and only scaled when zooming:
+ * laying text out again at every zoom was slow, and at each new size the browser's letter widths
+ * came out a little different, so the words drifted off the printed ones.
+ */
+const TEXT_WIDTH = 1000;
 /** Safari's limit for one canvas is about 16.7 million pixels. */
 const MAX_PIXELS = 16_000_000;
 
@@ -39,6 +45,9 @@ export class DocView {
   private alive = true;
   private width = 390;
   private queue = false;
+  /** Until then the zoom is still changing: pictures already drawn wait to be sharpened. */
+  private settling = 0;
+  private settleTimer = 0;
   private raf = 0;
   private pinch: { startZoom: number; cx: number; cy: number } | null = null;
 
@@ -83,6 +92,7 @@ export class DocView {
 
   destroy() {
     this.alive = false;
+    clearTimeout(this.settleTimer);
     this.scroller.removeEventListener('scroll', this.onScroll);
     window.removeEventListener('resize', this.onResize);
     cancelAnimationFrame(this.raf);
@@ -115,8 +125,8 @@ export class DocView {
       s.el.style.setProperty('--total-scale-factor', String(pw / s.w));
       top += s.height + GAP;
     }
-    // Text at the new size: its lines are fitted to the printed ones again.
-    for (const s of this.slots) if (s.text) fitLineWidths(s.text);
+    // The text layers only scale with the page: nothing in them is laid out again.
+    for (const s of this.slots) if (s.text) s.text.style.transform = `scale(${pw / TEXT_WIDTH})`;
   }
 
   private onResize = () => {
@@ -183,10 +193,14 @@ export class DocView {
         const top = this.scroller.scrollTop;
         const h = this.scroller.clientHeight;
         const middle = top + h / 2;
-        const want = Math.round(this.pageWidth * (window.devicePixelRatio || 1));
+        // Twice the page width at most: iPhone's screens are 3x, but a page drawn at 3x has
+        // more than twice the pixels to draw and keep, for a difference the eye barely sees.
+        const want = Math.round(this.pageWidth * Math.min(window.devicePixelRatio || 1, 2));
+        const zooming = performance.now() < this.settling;
         const todo = this.slots
           .filter((s) => s.top + s.height > top - h * 0.5 && s.top < top + h * 1.5)
-          .filter((s) => !s.drawn || Math.abs(s.drawn - Math.min(want, cap(s))) > s.drawn * 0.15)
+          // While zooming, a page keeps its picture (stretched); it's drawn sharp once zooming stops.
+          .filter((s) => !s.drawn || (!zooming && Math.abs(s.drawn - Math.min(want, cap(s))) > s.drawn * 0.15))
           .sort((a, b) => Math.abs(a.top + a.height / 2 - middle) - Math.abs(b.top + b.height / 2 - middle));
         const s = todo[0];
         if (!s) return;
@@ -212,12 +226,20 @@ export class DocView {
   /** The invisible text over a page, so words can be selected. */
   ensureText(s: Slot): Promise<void> {
     s.textPromise ??= (async () => {
-      const text = await makeTextLayer(s.page, UNITS / s.w);
+      const text = await makeTextLayer(s.page, TEXT_WIDTH / s.w);
       if (!this.alive || s.textPromise === null) return;
+      text.style.setProperty('--total-scale-factor', String(TEXT_WIDTH / s.w));
+      // pdf.js sizes the layer with variables only its own viewer defines: set the size here.
+      text.style.width = `${TEXT_WIDTH}px`;
+      text.style.height = `${(TEXT_WIDTH * s.h) / s.w}px`;
+      text.style.transformOrigin = '0 0';
+      text.style.transform = `scale(${this.pageWidth / TEXT_WIDTH})`;
       s.el.insertBefore(text, s.overlay);
       fitLineWidths(text);
       s.text = text;
       s.textIndex = indexText(text);
+      // Highlights on this page are drawn again from its words, now that they are laid out.
+      this.decorate(this.slots.indexOf(s) + 1, s.overlay);
     })().catch(() => {
       s.textPromise = null;
     });
@@ -291,6 +313,10 @@ export class DocView {
     this.layout();
     this.scroller.scrollLeft = inX * this.pageWidth - fx;
     if (s) this.scroller.scrollTop = s.top + inY * s.height - fy;
+    // Sharper pictures are drawn once, when the zoom has stopped changing, not after every step.
+    this.settling = performance.now() + 350;
+    clearTimeout(this.settleTimer);
+    this.settleTimer = window.setTimeout(() => void this.drain(), 360);
     this.update();
   }
 

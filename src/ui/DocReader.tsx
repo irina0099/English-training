@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DocView, packAt, UNITS, unpackAt } from '../reading/docview';
 import { deleteFile } from '../reading/pdf';
 import { getIssue, markPageRead, markRead, notesOf, removeIssue, seenPages, setLast, setPlace, subscribeReading, updateNotes, type Place } from '../reading/store';
-import { rangeFor, sentenceAround, wordAt } from '../reading/text';
+import { rangeFor, sentenceAround, wordAt, type TextIndex } from '../reading/text';
 import type { Highlight, HighlightColor, Issue, PageNotes, Stroke, TextNote, Tool } from '../reading/types';
 import { speak } from '../tts';
 import { Modal } from './common';
@@ -69,15 +69,45 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
 
   // ——— Notes drawn on the pages ———
 
+  /**
+   * A highlight's boxes worked out again from its words, once the page's text is laid out: boxes
+   * saved earlier (before the text layer matched the print) sat off the words. Changed boxes are
+   * also saved, so the copy with notes gets them too. Null when the words aren't there as saved.
+   */
+  const outdated = useRef(new Map<string, Highlight['rects']>());
+  const saveRectsTimer = useRef(0);
+  const freshRects = (h: Highlight, idx: TextIndex): Highlight['rects'] | null => {
+    const dv = dvRef.current;
+    if (!dv || idx.text.slice(h.start, h.end).trim() !== h.text.trim()) return null;
+    const r = rangeFor(idx, h.start, h.end);
+    const rects = r ? dv.rectsOf(h.pg ?? 1, r) : [];
+    if (!rects.length) return null;
+    const old = h.rects ?? [];
+    const moved = rects.length !== old.length || rects.some((b, i) => b.some((v, j) => Math.abs(v - old[i][j]) > 0.002));
+    if (moved) {
+      outdated.current.set(h.id, rects);
+      clearTimeout(saveRectsTimer.current);
+      saveRectsTimer.current = window.setTimeout(() => {
+        const fresh = outdated.current;
+        outdated.current = new Map();
+        const cur = notesOf(issueId, UNIT);
+        // Not an edit of the learner's: no undo step.
+        if (cur.hl.some((x) => fresh.has(x.id))) updateNotes(issueId, UNIT, { hl: cur.hl.map((x) => (fresh.has(x.id) ? { ...x, rects: fresh.get(x.id) } : x)) });
+      }, 400);
+    }
+    return rects;
+  };
+
   const decorate = (pg: number, overlay: HTMLElement) => {
     const dv = dvRef.current;
     const slot = dv?.slots[pg - 1];
     const n = notesRef.current;
     // Redrawn from the notes; the search match and a jump's flash stay.
     for (const c of [...overlay.children]) if (!c.matches('.find-hit, .flash')) c.remove();
+    const idx = dv?.indexOf(pg);
     for (const h of n.hl)
       if (h.pg === pg)
-        for (const [x, y, w, hh] of h.rects ?? []) {
+        for (const [x, y, w, hh] of (idx && freshRects(h, idx)) || h.rects || []) {
           const i = document.createElement('i');
           i.className = `hl hl-${h.color}`;
           i.style.cssText = `left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${hh * 100}%`;
