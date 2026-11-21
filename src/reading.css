@@ -90,9 +90,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-width: 0;
+  max-width: 52vw;
   font-size: 15px;
   font-weight: 600;
   line-height: 1.2;
+}
+
+.reader-title b {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .reader-title span {
@@ -1262,8 +1271,13 @@ body > .modal-backdrop {
   overflow: hidden;
 }
 
-.pdf-page + .pdf-page {
-  margin-top: 12px;
+.paper-doc {
+  background: transparent;
+  box-shadow: none;
+}
+
+.paper-doc .pdf-page {
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 1px 6px rgba(0, 0, 0, 0.1);
 }
 
 .pdf-page:not(:has(.pdf-img))::after {

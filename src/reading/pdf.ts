@@ -199,20 +199,13 @@ async function renderThumb(page: PDFPageProxy): Promise<string> {
 
 // ——— Drawing pages ———
 
-/** How much sharper than the page width the picture is drawn, so zooming in stays crisp. */
-const QUALITY = 3;
+/** Safari's limit for one canvas is about 16.7 million pixels. */
+const MAX_PIXELS = 16_000_000;
 
-export interface PageSlot {
-  el: HTMLElement;
-  height: number;
-}
-
-/**
- * Lays out an article's PDF pages inside `root`: an image of each page and an invisible text
- * layer that matches the printed words. Text layers come first (they are quick), so word
- * selection works while the pictures are still being drawn.
- */
-async function drawPage(page: PDFPageProxy, viewport: ReturnType<PDFPageProxy['getViewport']>): Promise<Blob | null> {
+async function drawPage(page: PDFPageProxy, width: number): Promise<Blob | null> {
+  const base = page.getViewport({ scale: 1 });
+  const target = Math.min(width, Math.sqrt(MAX_PIXELS * (base.width / base.height)));
+  const viewport = page.getViewport({ scale: target / base.width });
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(viewport.width);
   canvas.height = Math.round(viewport.height);
@@ -223,78 +216,142 @@ async function drawPage(page: PDFPageProxy, viewport: ReturnType<PDFPageProxy['g
   return blob;
 }
 
-/** Safari's limit for one canvas is about 16.7 million pixels. */
-const MAX_PIXELS = 16_000_000;
-
 /**
- * Redraws one page sharper for the current zoom, like Preview does once you stop zooming.
- * `width` is the wanted picture width in device pixels. Returns false if nothing changed.
+ * A whole magazine as one continuous column of pages, like Preview. Every page gets its
+ * place and its text layer, but only the pages near the screen are drawn, so a long issue
+ * fits in the phone's memory.
  */
-export async function sharpenPage(slot: HTMLElement, key: string, width: number, isCurrent: () => boolean): Promise<boolean> {
-  const n = Number(slot.dataset.page);
-  const img = slot.querySelector<HTMLImageElement>('.pdf-img');
-  if (!n || !img) return false;
-  const doc = await openDoc(key);
-  const page = await doc.getPage(n);
-  const base = page.getViewport({ scale: 1 });
-  const cap = Math.sqrt(MAX_PIXELS * (base.width / base.height));
-  const target = Math.min(width, cap);
-  if (target <= Number(slot.dataset.width ?? 0) * 1.15) return false;
-  const blob = await drawPage(page, page.getViewport({ scale: target / base.width }));
-  if (!blob || !isCurrent()) return false;
-  const old = img.src;
-  img.src = URL.createObjectURL(blob);
-  slot.dataset.width = String(Math.round(target));
-  if (!slot.dataset.base) slot.dataset.base = old;
-  else URL.revokeObjectURL(old);
-  return true;
-}
+export class PdfView {
+  slots: HTMLElement[] = [];
+  private pages: PDFPageProxy[] = [];
+  private m: PdfJs | null = null;
+  private wanted: number[] = [];
+  private drawing = false;
+  private alive = true;
+  /** Picture width, in device pixels, when the page fills the screen width. */
+  private baseWidth = 1200;
+  private sharp: number | null = null;
 
-/** Puts a sharpened page back to its normal picture, to save memory. */
-export function softenPage(slot: HTMLElement) {
-  const img = slot.querySelector<HTMLImageElement>('.pdf-img');
-  const base = slot.dataset.base;
-  if (!img || !base) return;
-  URL.revokeObjectURL(img.src);
-  img.src = base;
-  delete slot.dataset.base;
-  slot.dataset.width = String(Math.round(PAGE_WIDTH * QUALITY));
-}
+  constructor(
+    private root: HTMLElement,
+    private key: string,
+  ) {}
 
-export async function layoutPdf(root: HTMLElement, key: string, from: number, to: number, isCurrent: () => boolean, onText: () => void): Promise<void> {
-  const m = await pdfjs();
-  const doc = await openDoc(key);
-  const pages: { page: PDFPageProxy; slot: HTMLElement; scale: number }[] = [];
-  for (let n = from; n <= to && n <= doc.numPages; n++) {
-    const page = await doc.getPage(n);
-    const base = page.getViewport({ scale: 1 });
-    const scale = PAGE_WIDTH / base.width;
-    const viewport = page.getViewport({ scale });
-    const slot = document.createElement('div');
-    slot.className = 'pdf-page';
-    slot.style.height = `${viewport.height}px`;
-    slot.dataset.page = String(n);
-    const text = document.createElement('div');
-    text.className = 'pdf-text';
-    await buildTextLayer(m, page, viewport, text);
-    if (!isCurrent()) return;
-    slot.appendChild(text);
-    root.appendChild(slot);
-    pages.push({ page, slot, scale });
+  /** Places every page (sizes only); returns the number of pages. */
+  async layout(gap: number): Promise<number> {
+    this.m = await pdfjs();
+    const doc = await openDoc(this.key);
+    for (let n = 1; n <= doc.numPages; n++) {
+      const page = await doc.getPage(n);
+      if (!this.alive) return 0;
+      const vp = page.getViewport({ scale: PAGE_WIDTH / page.getViewport({ scale: 1 }).width });
+      const slot = document.createElement('div');
+      slot.className = 'pdf-page';
+      slot.style.height = `${vp.height}px`;
+      if (n > 1) slot.style.marginTop = `${gap}px`;
+      slot.dataset.page = String(n);
+      this.root.appendChild(slot);
+      this.slots.push(slot);
+      this.pages.push(page);
+    }
+    return doc.numPages;
   }
-  onText();
-  for (const { page, slot, scale } of pages) {
-    if (!isCurrent()) return;
-    const viewport = page.getViewport({ scale: scale * QUALITY });
-    const blob = await drawPage(page, viewport);
-    if (!blob || !isCurrent()) return;
-    slot.dataset.width = String(Math.round(viewport.width));
-    const img = document.createElement('img');
-    img.className = 'pdf-img';
-    img.alt = '';
-    img.draggable = false;
+
+  /** Builds the text layers, nearest pages first; `onDone` runs when every page has its text. */
+  async buildText(first: number, onPage: () => void, onDone: () => void) {
+    const order = this.slots.map((_, i) => i).sort((a, b) => Math.abs(a - (first - 1)) - Math.abs(b - (first - 1)));
+    for (const i of order) {
+      if (!this.alive) return;
+      const page = this.pages[i];
+      const vp = page.getViewport({ scale: PAGE_WIDTH / page.getViewport({ scale: 1 }).width });
+      const text = document.createElement('div');
+      text.className = 'pdf-text';
+      try {
+        await buildTextLayer(this.m!, page, vp, text);
+      } catch {
+        continue;
+      }
+      if (!this.alive) return;
+      this.slots[i].appendChild(text);
+      onPage();
+      // Let the page breathe between pages: scrolling stays smooth while text is prepared.
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    onDone();
+  }
+
+  /** Draws the given pages (numbers from 1, most important first) and forgets far-away ones. */
+  show(pages: number[], baseWidth: number) {
+    this.baseWidth = Math.round(baseWidth);
+    this.wanted = pages.filter((n) => n >= 1 && n <= this.slots.length);
+    const keep = new Set<number>();
+    for (const n of this.wanted) for (let k = n - 1; k <= n + 1; k++) keep.add(k);
+    this.slots.forEach((slot, i) => {
+      if (!keep.has(i + 1)) this.drop(slot);
+    });
+    void this.drain();
+  }
+
+  private drop(slot: HTMLElement) {
+    const img = slot.querySelector<HTMLImageElement>('.pdf-img');
+    if (!img) return;
+    URL.revokeObjectURL(img.src);
+    img.remove();
+    delete slot.dataset.width;
+    if (this.sharp === Number(slot.dataset.page)) this.sharp = null;
+  }
+
+  private async drain() {
+    if (this.drawing) return;
+    this.drawing = true;
+    try {
+      for (;;) {
+        const n = this.wanted.find((k) => !this.slots[k - 1]?.querySelector('.pdf-img'));
+        if (!n || !this.alive) break;
+        await this.paint(n, this.baseWidth);
+      }
+    } finally {
+      this.drawing = false;
+    }
+  }
+
+  private async paint(n: number, width: number): Promise<boolean> {
+    const slot = this.slots[n - 1];
+    const blob = await drawPage(this.pages[n - 1], width);
+    if (!blob || !this.alive || !slot) return false;
+    let img = slot.querySelector<HTMLImageElement>('.pdf-img');
+    if (img) URL.revokeObjectURL(img.src);
+    else {
+      img = document.createElement('img');
+      img.className = 'pdf-img';
+      img.alt = '';
+      img.draggable = false;
+      slot.insertBefore(img, slot.firstChild);
+    }
     img.src = URL.createObjectURL(blob);
-    slot.insertBefore(img, slot.firstChild);
+    slot.dataset.width = String(Math.round(width));
+    return true;
+  }
+
+  /**
+   * Redraws one page sharper for the current zoom, like Preview once you stop zooming;
+   * the page sharpened before goes back to normal, to save memory.
+   */
+  async sharpen(n: number, width: number) {
+    if (this.sharp && this.sharp !== n) {
+      const prev = this.sharp;
+      this.sharp = null;
+      if (Number(this.slots[prev - 1]?.dataset.width) > this.baseWidth * 1.15) await this.paint(prev, this.baseWidth);
+    }
+    const slot = this.slots[n - 1];
+    if (!slot?.querySelector('.pdf-img')) return;
+    if (width <= Number(slot.dataset.width ?? 0) * 1.15) return;
+    if (await this.paint(n, width)) this.sharp = n;
+  }
+
+  destroy() {
+    this.alive = false;
+    for (const slot of this.slots) this.drop(slot);
   }
 }
 

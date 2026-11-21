@@ -3,8 +3,8 @@ import { saveCustomWord } from '../engine/store';
 import { createCustomWord, sameWord } from '../engine/words';
 import { define, findKnown, googleTranslateUrl, lemmaCandidates, translate, type Definition } from '../reading/lookup';
 import { getIssue, getReading, markRead, notesOf, setLast, subscribeReading, updateNotes } from '../reading/store';
-import { layoutPdf, sharpenPage, softenPage } from '../reading/pdf';
-import { boxesFor, indexText, offsetAt, sentenceAround, wordAt, type Box, type TextIndex } from '../reading/text';
+import { PdfView } from '../reading/pdf';
+import { boxesFor, indexText, offsetAt, rangeFor, sentenceAround, wordAt, type Box, type TextIndex } from '../reading/text';
 import { PAGE_WIDTH, type Highlight, type HighlightColor, type PageNotes, type Stroke, type TextNote, type Tool } from '../reading/types';
 import { speak } from '../tts';
 import type { VocabItem } from '../types';
@@ -18,6 +18,8 @@ const PAD = 12;
 const LONG_PRESS = 420;
 /** How far to pull past the end of an article to open the next one. */
 const PULL = 90;
+/** Space between printed pages, in page units. */
+const GAP = 10;
 
 interface View {
   s: number;
@@ -43,14 +45,22 @@ const WIDTHS = { pen: [1.6, 3, 5], pencil: [1.2, 2.2, 3.4], marker: [10, 16, 24]
 export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; pageId: string; focus?: number; onClose: () => void }) {
   const issue = getIssue(issueId)!;
   const [page, setPage] = useState(pageId);
-  const index = Math.max(0, issue.pages.findIndex((p) => p.id === page));
-  const mp = issue.pages[index];
+  // A magazine added as PDF reads as one continuous column of pages, like Preview; its
+  // articles are places in that column. The demo issue keeps one article at a time.
+  const isDoc = !!issue.file;
+  const order = useMemo(() => (isDoc ? issue.pages.slice().sort((a, b) => (a.pdf?.from ?? 0) - (b.pdf?.from ?? 0)) : issue.pages), [issue]);
+  const index = Math.max(0, order.findIndex((p) => p.id === page));
+  const mp = order[index];
+  /** Notes and highlights belong to the whole issue in a PDF, to the article otherwise. */
+  const unit = isDoc ? 'doc' : mp.id;
+  const pvRef = useRef<PdfView | null>(null);
+  const [textReady, setTextReady] = useState(false);
 
   const d = useData();
   const [, bump] = useState(0);
   useEffect(() => subscribeReading(() => bump((x) => x + 1)), []);
   const sysMenu = getReading().menu !== 'app';
-  const notes = notesOf(issueId, mp.id);
+  const notes = notesOf(issueId, unit);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
@@ -63,9 +73,11 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
   const viewRef = useRef(view);
   const overRef = useRef(0);
   const syncTimer = useRef(0);
+  const paintHook = useRef<() => void>(() => {});
   const paint = () => {
     const el = paperRef.current;
     if (el) el.style.transform = transformOf(viewRef.current, overRef.current);
+    paintHook.current();
   };
   const setView = (v: View) => {
     viewRef.current = v;
@@ -107,6 +119,8 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
   const fitView = (): View => {
     const vp = viewportRef.current;
     const W = vp?.clientWidth ?? 390;
+    // Printed pages fill the screen edge to edge, like Preview.
+    if (isDoc) return { s: W / PAGE_WIDTH, x: 0, y: 0 };
     const s = Math.min(1.6, (W - PAD * 2) / PAGE_WIDTH);
     return { s, x: (W - PAGE_WIDTH * s) / 2, y: PAD };
   };
@@ -130,29 +144,44 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       setHeight(h);
       setLayoutTick((t) => t + 1);
     };
-    el.innerHTML = mp.pdf ? '' : mp.html;
+    el.innerHTML = isDoc ? '' : mp.html;
     idxRef.current = indexText(el);
     setLoadError(false);
-    if (mp.pdf && issue.file) {
+    setTextReady(!isDoc);
+    if (isDoc) {
       // Printed pages: pictures of the pages with the words laid invisibly on top.
-      layoutPdf(el, issue.file, mp.pdf.from, mp.pdf.to, () => alive, () => {
-        idxRef.current = indexText(el);
-        measure();
-        land();
-      }).catch(() => alive && setLoadError(true));
+      const pv = new PdfView(el, issue.file!);
+      pvRef.current = pv;
+      pv.layout(GAP)
+        .then(() => {
+          if (!alive) return;
+          measure();
+          const start = mp.pdf?.from ?? 1;
+          const v = fitView();
+          const slot = pv.slots[start - 1];
+          setView(clamp({ ...v, y: -(slot?.offsetTop ?? 0) * v.s }, true, el.offsetHeight));
+          updateVisible();
+          pv.buildText(start, () => {}, () => {
+            if (!alive) return;
+            idxRef.current = indexText(el);
+            setTextReady(true);
+            measure();
+          });
+        })
+        .catch(() => alive && setLoadError(true));
     }
     measure();
     const v = fitView();
     setFit(v.s);
     setView(v);
-    if (!mp.pdf) land();
+    if (!isDoc) land();
     scrolledHere.current = false;
     g.over = 0;
     setPull(0);
     setSel(null);
     setMarkup(false);
     history.current = { undo: [], redo: [] };
-    setLast(issueId, mp.id);
+    if (!isDoc) setLast(issueId, mp.id);
     // Web fonts change line breaks: measure again once they arrive.
     document.fonts?.ready.then(measure);
     const ro = new ResizeObserver(measure);
@@ -160,10 +189,10 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
     return () => {
       alive = false;
       ro.disconnect();
-      for (const img of el.querySelectorAll('img')) URL.revokeObjectURL(img.src);
-      for (const slot of el.querySelectorAll<HTMLElement>('[data-base]')) URL.revokeObjectURL(slot.dataset.base!);
+      pvRef.current?.destroy();
+      pvRef.current = null;
     };
-  }, [issueId, mp.id]);
+  }, [issueId, unit]);
 
   useEffect(() => {
     const onResize = () => {
@@ -177,7 +206,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
 
   // Jump to a word from the dictionary: zoom in on it and flash it.
   useEffect(() => {
-    if (focus === undefined || page !== pageId || !idxRef.current) return;
+    if (focus === undefined || !textReady || (!isDoc && page !== pageId) || !idxRef.current) return;
     const w = wordAt(idxRef.current, focus);
     if (!w) return;
     const t = setTimeout(() => {
@@ -190,51 +219,78 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       setTimeout(() => setFlash(null), 2200);
     }, 350);
     return () => clearTimeout(t);
-  }, [layoutTick > 0, focus]);
+  }, [textReady, focus]);
 
-  const clamp = (v: View, soft = false): View => {
+  const clamp = (v: View, soft = false, h0?: number): View => {
     const vp = viewportRef.current;
     if (!vp) return v;
     const W = vp.clientWidth;
     const H = vp.clientHeight;
     const s = soft ? v.s : Math.max(fit, Math.min(MAX_ZOOM, v.s));
     const w = PAGE_WIDTH * s;
-    const h = height * s;
+    const h = (h0 ?? height) * s;
     const x = w <= W ? (W - w) / 2 : Math.min(0, Math.max(W - w, v.x));
-    const y = h + PAD * 2 <= H ? PAD : Math.min(PAD, Math.max(H - h - PAD - 64, v.y));
+    const top = isDoc ? 0 : PAD;
+    const bottom = isDoc ? 0 : PAD + 64;
+    const y = h + top * 2 <= H ? top : Math.min(top, Math.max(H - h - bottom, v.y));
     return { s, x, y };
   };
 
-  // Sharp pages when zoomed in: once the view settles, redraw the page in view at the
-  // resolution the screen needs (only one page at a time, to stay within iPhone's memory).
-  const sharpened = useRef<HTMLElement | null>(null);
+  /** PDF pages on screen, the one in the middle first. */
+  const pagesInView = (): number[] => {
+    const vp = viewportRef.current;
+    const pv = pvRef.current;
+    if (!vp || !pv) return [];
+    const v = viewRef.current;
+    const top = -v.y / v.s;
+    const bottom = (vp.clientHeight - v.y) / v.s;
+    const middle = (top + bottom) / 2;
+    const seen = pv.slots.filter((sl) => sl.offsetTop + sl.offsetHeight > top && sl.offsetTop < bottom);
+    seen.sort((a, b) => Math.abs(a.offsetTop + a.offsetHeight / 2 - middle) - Math.abs(b.offsetTop + b.offsetHeight / 2 - middle));
+    return seen.map((sl) => Number(sl.dataset.page));
+  };
+
+  /** Draws the pages on screen and the next one down; called while scrolling, at most every 120 ms. */
+  const lastVisible = useRef(0);
+  const updateVisible = () => {
+    const pv = pvRef.current;
+    if (!pv) return;
+    lastVisible.current = performance.now();
+    const pages = pagesInView();
+    if (!pages.length) return;
+    const after = Math.max(...pages) + 1;
+    pv.show([...pages, after], PAGE_WIDTH * fitView().s * (window.devicePixelRatio || 1));
+  };
+  paintHook.current = () => {
+    if (isDoc && performance.now() - lastVisible.current > 120) updateVisible();
+  };
+
   useEffect(() => {
-    if (!mp.pdf || !issue.file) return;
-    const t = setTimeout(() => {
-      const vp = viewportRef.current;
-      const el = contentRef.current;
-      if (!vp || !el) return;
-      const v = viewRef.current;
-      const middle = (vp.clientHeight / 2 - v.y) / v.s;
-      const slot = [...el.querySelectorAll<HTMLElement>('.pdf-page')].find((p) => middle >= p.offsetTop - 6 && middle <= p.offsetTop + p.offsetHeight + 6);
-      if (!slot) return;
-      const want = PAGE_WIDTH * v.s * (window.devicePixelRatio || 1);
-      if (sharpened.current && sharpened.current !== slot) {
-        softenPage(sharpened.current);
-        sharpened.current = null;
-      }
-      const page = mp.id;
-      sharpenPage(slot, issue.file!, want, () => page === mp.id && slot.isConnected).then((done) => {
-        if (done) sharpened.current = slot;
-      });
-    }, 250);
+    if (!isDoc) return;
+    updateVisible();
+    const pages = pagesInView();
+    if (!pages.length) return;
+    const v = viewRef.current;
+    const vp = viewportRef.current!;
+    // The article in the middle of the screen names the header and the bottom bar.
+    const middle = pages[0];
+    const here = [...order].reverse().find((a) => (a.pdf?.from ?? 1) <= middle) ?? order[0];
+    if (here.id !== page) setPage(here.id);
+    setLast(issueId, here.id);
+    // Reaching the end of an article's last page counts as reading it.
+    const lastSlot = pvRef.current?.slots[(here.pdf?.to ?? 1) - 1];
+    const bottom = (vp.clientHeight - v.y) / v.s;
+    if (lastSlot && scrolledHere.current && lastSlot.offsetTop + lastSlot.offsetHeight <= bottom + 4) markRead(issueId, here.id);
+    // Sharp pages when zoomed in: once the view settles, redraw the page in the middle
+    // at the resolution the screen needs.
+    const t = setTimeout(() => pvRef.current?.sharpen(middle, PAGE_WIDTH * viewRef.current.s * (window.devicePixelRatio || 1)), 250);
     return () => clearTimeout(t);
   }, [view, layoutTick]);
 
   // Finishing the page: reaching its end counts as read.
   useEffect(() => {
     const vp = viewportRef.current;
-    if (!vp || notes.read || !idxRef.current?.text.trim()) return;
+    if (isDoc || !vp || notes.read || !idxRef.current?.text.trim()) return;
     // Only once the learner has scrolled to the end, or the whole article fits and she looked at it.
     const atEnd = view.y + height * view.s <= vp.clientHeight + 40;
     if (atEnd && scrolledHere.current && layoutTick > 1) markRead(issueId, mp.id);
@@ -243,24 +299,24 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
   // ——— Annotations ———
 
   const pushHistory = () => {
-    history.current.undo.push(notesOf(issueId, mp.id));
+    history.current.undo.push(notesOf(issueId, unit));
     history.current.redo = [];
   };
   const saveNotes = (patch: Partial<PageNotes>) => {
     pushHistory();
-    updateNotes(issueId, mp.id, patch);
+    updateNotes(issueId, unit, patch);
   };
   const undo = () => {
     const prev = history.current.undo.pop();
     if (!prev) return;
-    history.current.redo.push(notesOf(issueId, mp.id));
-    updateNotes(issueId, mp.id, prev);
+    history.current.redo.push(notesOf(issueId, unit));
+    updateNotes(issueId, unit, prev);
   };
   const redo = () => {
     const next = history.current.redo.pop();
     if (!next) return;
-    history.current.undo.push(notesOf(issueId, mp.id));
-    updateNotes(issueId, mp.id, next);
+    history.current.undo.push(notesOf(issueId, unit));
+    updateNotes(issueId, unit, next);
   };
 
   const idx = idxRef.current;
@@ -271,12 +327,12 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
     if (!idx) return [];
     const out: Box[] = [];
     for (const w of d.custom)
-      for (const c of w.ctx ?? []) if (c.issue === issueId && c.page === mp.id && c.at !== undefined) {
+      for (const c of w.ctx ?? []) if (c.issue === issueId && (isDoc || c.page === mp.id) && c.at !== undefined) {
         const r = wordAt(idx, c.at);
         if (r) out.push(...box(r.start, r.end));
       }
     return out;
-  }, [d.custom, layoutTick, idx, mp.id]);
+  }, [d.custom, layoutTick, idx, unit]);
 
   const collapseTimer = useRef(0);
   const [barColors, setBarColors] = useState(false);
@@ -315,7 +371,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
     };
     document.addEventListener('selectionchange', onChange);
     return () => document.removeEventListener('selectionchange', onChange);
-  }, [sysMenu, markup, mp.id]);
+  }, [sysMenu, markup, unit]);
 
   const selText = sel && idx ? idx.text.slice(sel.start, sel.end) : '';
   const selBoxes = sel ? box(sel.start, sel.end) : [];
@@ -329,7 +385,9 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       const start = Math.min(sel.start, ...overlapping.map((h) => h.start));
       const end = Math.max(sel.end, ...overlapping.map((h) => h.end));
       const kept = notes.hl.filter((h) => !overlapping.includes(h));
-      saveNotes({ hl: [...kept, { id: uid(), start, end, color, text: idx.text.slice(start, end), at: Date.now() }] });
+      // The printed page it's on, so the library can tell which article it belongs to.
+      const pg = Number(rangeFor(idx, start, start + 1)?.startContainer.parentElement?.closest<HTMLElement>('.pdf-page')?.dataset.page) || undefined;
+      saveNotes({ hl: [...kept, { id: uid(), start, end, color, text: idx.text.slice(start, end), at: Date.now(), ...(pg ? { pg } : {}) }] });
     }
     clearSel();
   };
@@ -529,7 +587,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
     }
     if (g.mode === 'drag-text') {
       const p = toPage(e.clientX, e.clientY);
-      updateNotes(issueId, mp.id, { texts: notes.texts.map((t) => (t.id === g.textId ? { ...t, x: round(p.x - g.textOffset.x), y: round(p.y - g.textOffset.y) } : t)) });
+      updateNotes(issueId, unit, { texts: notes.texts.map((t) => (t.id === g.textId ? { ...t, x: round(p.x - g.textOffset.x), y: round(p.y - g.textOffset.y) } : t)) });
       return;
     }
     if (g.mode === 'pan' && g.moved) {
@@ -545,7 +603,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
         setView(c);
         // Scrolling on past the end (or the start) of the article pulls towards the next one.
         const rest = v.y + dy - c.y;
-        if (Math.abs(rest) > 0.5) g.over = rest;
+        if (!isDoc && Math.abs(rest) > 0.5) g.over = rest;
       } else {
         const over = g.over + dy;
         if (Math.sign(over) !== Math.sign(g.over)) {
@@ -603,8 +661,8 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       const over = g.over;
       g.over = 0;
       setPull(0);
-      if (over <= -PULL && issue.pages[index + 1]) return go(1);
-      if (over >= PULL && issue.pages[index - 1]) {
+      if (over <= -PULL && order[index + 1]) return go(1);
+      if (over >= PULL && order[index - 1]) {
         landEnd.current = true;
         return go(-1);
       }
@@ -644,7 +702,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
   draftRef.current = draft;
 
   const eraseAt = (x: number, y: number, first: boolean) => {
-    const cur = notesOf(issueId, mp.id);
+    const cur = notesOf(issueId, unit);
     const r = 10;
     const hit = cur.strokes.filter((s) => {
       for (let i = 0; i < s.pts.length; i += 2) if (Math.hypot(s.pts[i] - x, s.pts[i + 1] - y) < r + s.width / 2) return true;
@@ -652,7 +710,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
     });
     if (!hit.length) return;
     if (first || !g.moved) pushHistory();
-    updateNotes(issueId, mp.id, { strokes: cur.strokes.filter((s) => !hit.includes(s)) });
+    updateNotes(issueId, unit, { strokes: cur.strokes.filter((s) => !hit.includes(s)) });
   };
 
   const onWheel = (e: WheelEvent) => {
@@ -696,7 +754,15 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
   }
 
   const go = (delta: number) => {
-    const next = issue.pages[index + delta];
+    const next = order[index + delta];
+    if (next && isDoc) {
+      // Jump to the article's first page.
+      const slot = pvRef.current?.slots[(next.pdf?.from ?? 1) - 1];
+      const v = viewRef.current;
+      setPage(next.id);
+      setView(clamp({ ...v, y: -(slot?.offsetTop ?? 0) * v.s }));
+      return;
+    }
     if (next) setPage(next.id);
   };
 
@@ -722,9 +788,9 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
                 Library
               </button>
               <span class="reader-title">
-                <b>{mp.topic}</b>
+                <b>{isDoc ? mp.title : mp.topic}</b>
                 <span>
-                  {issue.magazine} · {index + 1} of {issue.pages.length}
+                  {isDoc ? mp.topic : issue.magazine} · {index + 1} of {order.length}
                 </span>
               </span>
               <button type="button" class="icon-btn reader-markup" aria-label="Markup" title="Markup" onClick={() => { setSel(null); setMarkup(true); }}>
@@ -749,7 +815,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
             <p>This magazine’s file isn’t on this device any more. Add the PDF again in Read.</p>
           </div>
         )}
-        <div class="paper" ref={paperRef} style={{ width: `${PAGE_WIDTH}px`, transform: transformOf(viewRef.current, overRef.current) }}>
+        <div class={`paper ${isDoc ? 'paper-doc' : ''}`} ref={paperRef} style={{ width: `${PAGE_WIDTH}px`, transform: transformOf(viewRef.current, overRef.current) }}>
           <div class={`mag ${issue.theme}`} ref={contentRef} lang="en" />
           <div class="paper-layer" aria-hidden="true">
             {hlBoxes.map(({ h, boxes }) =>
@@ -810,10 +876,10 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
           </div>
         )}
 
-        {pull !== 0 && (pull < 0 ? issue.pages[index + 1] : issue.pages[index - 1]) && (
+        {pull !== 0 && (pull < 0 ? order[index + 1] : order[index - 1]) && (
           <div class={`pull-hint ${pull < 0 ? 'at-bottom' : 'at-top'} ${Math.abs(pull) === 2 ? 'ready' : ''}`} aria-live="polite">
             <span>{pull < 0 ? (pull === -2 ? 'Release for next' : 'Keep scrolling for next') : pull === 2 ? 'Release for previous' : 'Pull for previous'}</span>
-            <b>{(pull < 0 ? issue.pages[index + 1] : issue.pages[index - 1]).title}</b>
+            <b>{(pull < 0 ? order[index + 1] : order[index - 1]).title}</b>
           </div>
         )}
         {!markup && zoomPct > 104 && (
@@ -891,11 +957,11 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
         <div class="reader-foot">
           <button type="button" class="pager" disabled={index === 0} onClick={() => go(-1)}>
             <IconChevron size={16} style={{ transform: 'rotate(180deg)' }} />
-            <span class="pager-label">{issue.pages[index - 1]?.title ?? ''}</span>
+            <span class="pager-label">{order[index - 1]?.title ?? ''}</span>
           </button>
           <span class={`read-state ${notes.read ? 'is-read' : ''}`}>{notes.read ? 'Read ✓' : 'Hold a word'}</span>
-          <button type="button" class="pager" disabled={index === issue.pages.length - 1} onClick={() => go(1)}>
-            <span class="pager-label">{issue.pages[index + 1]?.title ?? ''}</span>
+          <button type="button" class="pager" disabled={index === order.length - 1} onClick={() => go(1)}>
+            <span class="pager-label">{order[index + 1]?.title ?? ''}</span>
             <IconChevron size={16} />
           </button>
         </div>

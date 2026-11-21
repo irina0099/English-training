@@ -13,6 +13,11 @@ export function useReading() {
   return getReading();
 }
 
+function articleAt(iss: Issue, pg: number): MagPage {
+  const byPage = iss.pages.slice().sort((a, b) => (a.pdf?.from ?? 0) - (b.pdf?.from ?? 0));
+  return [...byPage].reverse().find((a) => (a.pdf?.from ?? 1) <= pg) ?? byPage[0];
+}
+
 /** Articles grouped by the magazine's sections, in the order they first appear. */
 function byTopic(pages: MagPage[]): [string, MagPage[]][] {
   const groups = new Map<string, MagPage[]>();
@@ -28,7 +33,11 @@ export function Library() {
   const last = r.last && getIssue(r.last.issue);
   const lastPage = last?.pages.find((p) => p.id === r.last!.page);
   const highlights = issues
-    .flatMap((iss) => iss.pages.flatMap((p) => notesOf(iss.id, p.id).hl.map((h) => ({ h, iss, p }))))
+    .flatMap((iss) => [
+      ...iss.pages.flatMap((p) => notesOf(iss.id, p.id).hl.map((h) => ({ h, iss, p }))),
+      // A PDF magazine keeps its highlights for the whole issue; find the article by page.
+      ...notesOf(iss.id, 'doc').hl.map((h) => ({ h, iss, p: articleAt(iss, h.pg ?? 1) })),
+    ])
     .sort((a, b) => b.h.at - a.h.at);
   const savedFromReading = d.custom.filter((w) => w.ctx?.length).length;
   const menu = r.menu ?? 'system';

@@ -43,6 +43,8 @@ export interface Highlight {
   color: HighlightColor;
   text: string;
   at: number;
+  /** For a PDF magazine: the printed page the highlight starts on. */
+  pg?: number;
 }
 
 export type Tool = 'pen' | 'marker' | 'pencil' | 'eraser' | 'text';
