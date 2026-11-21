@@ -1,5 +1,5 @@
 import type { PDFPageProxy } from 'pdfjs-dist';
-import { drawPage, makeTextLayer, openDoc } from './pdf';
+import { drawPage, fitLineWidths, makeTextLayer, openDoc } from './pdf';
 import { indexText, type TextIndex } from './text';
 
 // A PDF magazine as one column of pages, like Preview, built for iPhone:
@@ -115,6 +115,8 @@ export class DocView {
       s.el.style.setProperty('--total-scale-factor', String(pw / s.w));
       top += s.height + GAP;
     }
+    // Text at the new size: its lines are fitted to the printed ones again.
+    for (const s of this.slots) if (s.text) fitLineWidths(s.text);
   }
 
   private onResize = () => {
@@ -213,6 +215,7 @@ export class DocView {
       const text = await makeTextLayer(s.page, UNITS / s.w);
       if (!this.alive || s.textPromise === null) return;
       s.el.insertBefore(text, s.overlay);
+      fitLineWidths(text);
       s.text = text;
       s.textIndex = indexText(text);
     })().catch(() => {

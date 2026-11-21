@@ -130,7 +130,7 @@ async function closeDoc(key: string): Promise<void> {
   const p = docs.get(key);
   if (!p) return;
   docs.delete(key);
-  await p.then((d) => d.destroy()).catch(() => {});
+  await p.then((d) => d.loadingTask.destroy()).catch(() => {});
 }
 
 /** The magazine's file as saved on this device. */
@@ -344,9 +344,71 @@ async function buildTextLayer(m: PdfJs, page: PDFPageProxy, viewport: ReturnType
   el.classList.add('textLayer');
   const layer = new m.TextLayer({ textContentSource: content, container: el, viewport });
   await layer.render();
+  markLineWidths(el, content.items, (viewport.rawDims as { pageWidth: number }).pageWidth);
   // Line ends come out as <br>: give the page's text a space there, so the last word of
   // a line and the first word of the next don't run together.
   for (const br of el.querySelectorAll('br')) br.before(document.createTextNode(' '));
+}
+
+/**
+ * Notes on each line of the text layer how wide the printed line is, as a share of the page,
+ * so `fitLineWidths` can make the line exactly that wide once it is on the page.
+ */
+function markLineWidths(el: HTMLElement, items: Awaited<ReturnType<PDFPageProxy['getTextContent']>>['items'], pageWidth: number) {
+  const runs = items.filter((i) => 'str' in i && i.str !== '') as { width: number; transform: number[] }[];
+  const spans = [...el.querySelectorAll<HTMLElement>('span:not(.markedContent)')].filter((s) => s.textContent);
+  if (spans.length !== runs.length || !pageWidth) return;
+  spans.forEach((span, i) => {
+    const { width, transform } = runs[i];
+    // Straight lines only; pdf.js stretches only lines it measured (they have --scale-x).
+    if (transform[1] || transform[2] || !width || !span.style.getPropertyValue('--scale-x')) return;
+    span.dataset.w = String(width / pageWidth);
+  });
+}
+
+/**
+ * pdf.js sizes each line by measuring it on a canvas, and the page's own text rendering comes out
+ * a little different, so lines ended off the printed ones and the words inside drifted with them
+ * (highlights and selections sat beside the words). Once the layer is on the page, each line is
+ * measured as drawn and made exactly as wide as the printed one, in two parts:
+ * - letters are stretched by one factor for the page: the stand-in font's difference from the
+ *   magazine's, taken from the page's tightest lines (they have the least extra space);
+ * - what's left goes into the spaces, as in justified text, where the gaps between words widen.
+ * The browser doesn't draw text at a new size in exact proportion, so this runs again after zooming.
+ */
+export function fitLineWidths(layer: HTMLElement) {
+  const pageWidth = layer.getBoundingClientRect().width;
+  if (!pageWidth) return;
+  const minFont = Number(getComputedStyle(layer).getPropertyValue('--min-font-size')) || 1;
+  const spans = [...layer.querySelectorAll<HTMLElement>('span[data-w]')];
+  // Fitted again after zooming: the spacing set last time comes off before measuring.
+  // All changes, then all measurements, then all changes: one layout instead of one per line.
+  for (const span of spans) span.style.wordSpacing = '';
+  const lines = spans.map((span) => {
+    const scale = Number(span.style.getPropertyValue('--scale-x')) || 1;
+    const natural = span.getBoundingClientRect().width / scale;
+    const text = span.textContent ?? '';
+    return {
+      span,
+      natural,
+      target: Number(span.dataset.w) * pageWidth,
+      gaps: (text.trim().match(/ +/g) ?? []).length,
+      font: parseFloat(getComputedStyle(span).fontSize) / minFont,
+    };
+  });
+  const ratios = lines.filter((l) => l.natural && l.gaps >= 3).map((l) => l.target / l.natural).sort((a, b) => a - b);
+  const letters = ratios.length ? ratios[Math.floor(ratios.length * 0.2)] : 0;
+  for (const l of lines) {
+    if (!l.natural || !l.target) continue;
+    const plain = l.target / l.natural;
+    if (plain < 0.5 || plain > 2) continue;
+    const extra = letters && l.gaps ? l.target - letters * l.natural : -1;
+    if (extra >= 0 && l.font) {
+      // Letters by the page's factor, the rest spread over the gaps between words.
+      l.span.style.setProperty('--scale-x', String(letters));
+      l.span.style.wordSpacing = `${(extra / l.gaps / letters / l.font).toFixed(4)}em`;
+    } else l.span.style.setProperty('--scale-x', String(plain));
+  }
 }
 
 /** A text layer for one page, sized by the `--total-scale-factor` of the element it goes into. */
