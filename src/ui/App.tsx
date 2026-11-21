@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { RULES_BY_ID } from '../content';
 import { startCloudSync, type CloudStatus } from '../engine/cloud';
 import { isFixed, mistakesByItem } from '../engine/mistakes';
@@ -10,7 +10,9 @@ import { Flashcards, type Deck } from './Flashcards';
 import { Games, type GameId } from './Games';
 import { Home } from './Home';
 import { useData } from './hooks';
-import { IconBook, IconGrid, IconHome, IconPen, IconRule } from './icons';
+import { IconBook, IconHome, IconNews, IconPen, IconRule } from './icons';
+import { Library } from './Library';
+import { Reader } from './Reader';
 import { Mistakes } from './Mistakes';
 import { RuleBody, Rules } from './Rules';
 import { Session } from './Session';
@@ -18,12 +20,12 @@ import { Settings } from './Settings';
 
 const TABS: [Tab, string, typeof IconHome][] = [
   ['home', 'Today', IconHome],
+  ['read', 'Read', IconNews],
   ['words', 'Words', IconBook],
-  ['games', 'Games', IconGrid],
   ['mistakes', 'Mistakes', IconPen],
   ['rules', 'Grammar', IconRule],
 ];
-const ALL_TABS: Tab[] = ['home', 'words', 'games', 'mistakes', 'rules', 'settings'];
+const ALL_TABS: Tab[] = ['home', 'read', 'words', 'games', 'mistakes', 'rules', 'settings'];
 
 function readHash(): Tab {
   const h = location.hash.slice(1) as Tab;
@@ -37,6 +39,7 @@ export function App() {
   const [session, setSession] = useState<{ mode: SessionMode; key: number } | null>(null);
   const [cards, setCards] = useState<{ deck: Deck; key: number } | null>(null);
   const [rule, setRule] = useState<string | null>(null);
+  const [reader, setReader] = useState<{ issue: string; page: string; focus?: number; key: number } | null>(null);
   const [cloud, setCloud] = useState<CloudStatus>('local');
 
   useEffect(() => {
@@ -49,6 +52,8 @@ export function App() {
   const nav = useMemo<Nav>(
     () => ({
       go(next, gameId) {
+        // Tapping Read while a page is open goes back to the library, like iOS tabs.
+        if (next === 'read') setReader((r) => (r && readerTab.current ? null : r));
         setSession(null);
         setCards(null);
         setTab(next);
@@ -73,24 +78,43 @@ export function App() {
       openRule(id) {
         if (RULES_BY_ID[id]) setRule(id);
       },
+      openReader(issue, page, focus) {
+        setSession(null);
+        setCards(null);
+        setReader({ issue, page, focus, key: Date.now() });
+        setTab('read');
+        try {
+          history.replaceState(null, '', '#read');
+        } catch {
+          // Embedded views may not allow history changes.
+        }
+      },
     }),
     [],
   );
 
+  const readerTab = useRef(false);
+  readerTab.current = tab === 'read';
   const now = Date.now();
   const openMistakes = [...mistakesByItem(d.mistakes, now).keys()].filter((id) => !isFixed(d.states[id])).length;
 
   return (
     <NavContext.Provider value={nav}>
       <div class="shell">
+        {tab === 'read' && reader ? (
+          // The page opens inside the app, above the tab bar, not as a separate screen.
+          <Reader key={reader.key} issueId={reader.issue} pageId={reader.page} focus={reader.focus} onClose={() => setReader(null)} />
+        ) : (
         <main class="scroller" id="scroller">
           {tab === 'home' && <Home cloud={cloud} />}
+          {tab === 'read' && <Library />}
           {tab === 'words' && <Dictionary />}
           {tab === 'games' && <Games key={game.key} initial={game.id} />}
           {tab === 'mistakes' && <Mistakes />}
           {tab === 'rules' && <Rules />}
           {tab === 'settings' && <Settings cloud={cloud} />}
         </main>
+        )}
 
         <nav class="tabbar" aria-label="Sections">
           <div class="tabbar-inner">

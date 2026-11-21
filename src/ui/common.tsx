@@ -46,9 +46,9 @@ export function SpeakButton({ text, label = 'Listen' }: { text: string; label?: 
 }
 
 export function LevelChip({ item }: { item: Item }) {
+  // Levels aren't shown: progress is personal, not tied to B1/B2.
   if (item.kind !== 'drill' && item.custom) return <span class="chip chip-own">MINE</span>;
-  if (!item.level) return null;
-  return <span class={`chip ${item.level === 'B2' ? 'chip-b2' : ''}`}>{item.level}</span>;
+  return null;
 }
 
 const STAGE_LABEL = { new: 'new', learning: 'learning', known: 'known', mastered: 'mastered' } as const;

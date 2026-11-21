@@ -207,6 +207,13 @@ export function addToPractice(items: readonly Item[], now = Date.now()) {
   commit({ mistakes, states }, ['mistakes', 'progress'], now);
 }
 
+/** A finished practice session: one lesson further up the mountain. */
+export function recordLesson(now = Date.now()) {
+  const key = todayKey(now);
+  const day = data.days[key] ?? { n: 0, ok: 0, new: 0 };
+  commit({ days: pruneDays({ ...data.days, [key]: { ...day, lessons: (day.lessons ?? 0) + 1 } }) }, ['progress'], now);
+}
+
 export function updateSettings(patch: Partial<Settings>) {
   commit({ settings: { ...data.settings, ...patch } }, ['progress']);
 }

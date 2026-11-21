@@ -1,5 +1,6 @@
 import { render } from 'preact';
 import './styles.css';
+import './reading.css';
 import { App } from './ui/App';
 
 if (import.meta.env.MODE === 'artifact') document.documentElement.classList.add('in-artifact');

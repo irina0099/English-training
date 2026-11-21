@@ -127,3 +127,38 @@ export const IconFlame = (p: Props) => (
     <path d="M12 21c-3.9 0-7-2.7-7-6.5 0-3.3 2.4-5.4 3.6-7.4.3 1.6 1.1 2.7 2.2 3.3C11 7 12.3 4.5 14.5 3c-.3 3 1.6 4.8 2.9 6.6A7.4 7.4 0 0 1 19 14.5C19 18.3 15.9 21 12 21z" />
   </Svg>
 );
+
+export const IconMarkup = (p: Props) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9.5" />
+    <path d="M8.5 15.5l1-3 5-5 2 2-5 5z" />
+  </Svg>
+);
+
+export const IconUndo = (p: Props) => (
+  <Svg {...p}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </Svg>
+);
+
+export const IconRedo = (p: Props) => (
+  <Svg {...p}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+  </Svg>
+);
+
+export const IconMountain = (p: Props) => (
+  <Svg {...p}>
+    <path d="M3 20 9.5 8l3.5 6 2.5-4L21 20z" />
+    <path d="m7.6 11.5 1.9 1.3 1.6-1.2" />
+  </Svg>
+);
+
+export const IconNews = (p: Props) => (
+  <Svg {...p}>
+    <path d="M5 4h12v15a2 2 0 0 0 2 2H7a2 2 0 0 1-2-2z" />
+    <path d="M17 9h2v10a2 2 0 0 1-2 2M8 8h6M8 12h6M8 16h4" />
+  </Svg>
+);

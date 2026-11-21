@@ -61,18 +61,18 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
       </div>
 
       <section class="section">
-        <p class="section-title">Level</p>
+        <p class="section-title">Built-in words</p>
         <div class="list">
           {(['B1', 'B2'] as const).map((l) => (
             <button type="button" key={l} class="list-item" role="menuitemcheckbox" aria-checked={s.levels.includes(l)} onClick={() => toggleLevel(l)}>
               <span class="list-item-main">
-                <b>{l === 'B1' ? 'B1 — Intermediate' : 'B2 — Upper-intermediate'}</b>
+                <b>{l === 'B1' ? 'Everyday words' : 'Advanced words'}</b>
               </span>
               {s.levels.includes(l) && <IconCheck class="check" size={20} />}
             </button>
           ))}
         </div>
-        <p class="footnote">You can choose both. Your own words are always included.</p>
+        <p class="footnote">Which of the app’s word lists join your practice. Your own words and words from reading are always included.</p>
       </section>
 
       <section class="section">

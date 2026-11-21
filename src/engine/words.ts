@@ -68,6 +68,7 @@ export function createCustomWord(draft: WordDraft, existing?: VocabItem): VocabI
     note: draft.note?.trim() || undefined,
     custom: true,
     createdAt: existing?.createdAt ?? Date.now(),
+    ...(existing?.ctx ? { ctx: existing.ctx } : {}),
   };
 }
 

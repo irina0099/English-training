@@ -29,6 +29,17 @@ export interface VocabItem {
   family?: string;
   custom?: boolean;
   createdAt?: number;
+  /** Sentences where the learner met this word while reading, newest first. */
+  ctx?: WordContext[];
+}
+
+/** Where a saved word was met: the sentence and the magazine page. */
+export interface WordContext {
+  text: string;
+  issue: string;
+  page: string;
+  /** Character offset of the word on the page, to jump back to it. */
+  at?: number;
 }
 
 /** A grammar drill: a sentence with a gap, or a "which sentence is correct" task. */
@@ -103,6 +114,8 @@ export interface DayStat {
   ok: number;
   /** New items introduced. */
   new: number;
+  /** Practice sessions finished: each one is a lesson that moves the climb up. */
+  lessons?: number;
 }
 
 export interface Settings {

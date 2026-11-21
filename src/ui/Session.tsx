@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { BUILTIN, VOCAB } from '../content';
+import { METERS } from '../engine/climb';
 import { makeRng, randomSeed, type Rng } from '../engine/random';
 import {
   buildTasks,
@@ -13,7 +14,7 @@ import {
   type SessionMode,
   type Task,
 } from '../engine/session';
-import { acceptAnswer, getData, newLeftToday, recordAnswer, studyItems, unseenCount, type AnswerRecord } from '../engine/store';
+import { acceptAnswer, getData, recordLesson, newLeftToday, recordAnswer, studyItems, unseenCount, type AnswerRecord } from '../engine/store';
 import { speak } from '../tts';
 import type { Drill, Item, Verdict } from '../types';
 import { count, Example, LevelChip, RuleNote, SpeakButton, Translation, WordCard } from './common';
@@ -215,8 +216,21 @@ function Summary({ mode, score, mistakes, onClose }: { mode: SessionMode; score:
   const nav = useNav();
   const unique = mistakes.filter((m, i) => mistakes.findIndex((x) => x.item.id === m.item.id) === i);
   const rules = [...new Set(unique.map((m) => m.item.rule).filter((r): r is string => Boolean(r)))];
+  // A finished session is a lesson: it moves the climb up the mountain.
+  useEffect(() => {
+    if (score.n > 0) recordLesson();
+  }, []);
   return (
     <div class="stack">
+      {score.n > 0 && (
+        <button type="button" class="sheet lesson-up" onClick={() => nav.go('home')}>
+          <span class="lesson-up-icon" aria-hidden="true">▲</span>
+          <span>
+            <b>+{METERS.lesson} m up the mountain</b>
+            <span class="muted small">Lesson complete. See your climb on Today.</span>
+          </span>
+        </button>
+      )}
       <div class="sheet stack">
         <p class="section-title">{modeTitle(mode)} complete</p>
         <p class="title">

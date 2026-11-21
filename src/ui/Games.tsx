@@ -13,13 +13,13 @@ export type GameId = 'filword' | 'anagram' | 'pairs';
 export type PoolId = 'B1' | 'B2' | 'own' | 'hard';
 
 const POOLS: [PoolId, string][] = [
-  ['B1', 'B1'],
-  ['B2', 'B2'],
+  ['B1', 'Everyday'],
+  ['B2', 'Advanced'],
   ['own', 'Mine'],
   ['hard', 'Tricky'],
 ];
 
-const POOL_TITLE: Record<PoolId, string> = { B1: 'B1 words', B2: 'B2 words', own: 'My words', hard: 'Tricky words' };
+const POOL_TITLE: Record<PoolId, string> = { B1: 'Everyday words', B2: 'Advanced words', own: 'My words', hard: 'Tricky words' };
 
 const GAMES: { id: GameId; title: string; text: string; icon: preact.ComponentChildren; color: string }[] = [
   { id: 'filword', title: 'Fillword', text: 'Words bend like a snake and fill the whole grid. Find them from the Russian clues.', icon: <IconGrid size={18} />, color: 'var(--blue)' },
@@ -89,8 +89,8 @@ export function Games({ initial }: { initial: GameId | null }) {
           {words.length
             ? `${words.length} words in this set.`
             : pool === 'own'
-              ? 'You haven’t added any words yet. For now the games will use words from your level.'
-              : 'No tricky words yet — words you get wrong will appear here. For now the games will use words from your level.'}
+              ? 'You haven’t added any words yet. For now the games will use everyday words.'
+              : 'No tricky words yet — words you get wrong will appear here. For now the games will use everyday words.'}
         </p>
       </div>
       <div class="list with-icons">

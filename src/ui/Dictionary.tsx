@@ -8,27 +8,26 @@ import { deleteCustomWord, getData, MAX_CUSTOM_WORDS, saveCustomWord, saveCustom
 import { createCustomWord, markTarget, parseBulk, sameWord, type WordDraft } from '../engine/words';
 import type { Level, VocabItem } from '../types';
 import { ConfirmButton, count, dueLabel, LevelChip, Modal, StageDot, WordCard } from './common';
+import { ISSUES_BY_ID } from '../reading/issues';
 import { useNav } from './context';
 import { useData } from './hooks';
 import { IconChevron, IconPlus, IconSearch } from './icons';
 
-type Filter = 'all' | 'B1' | 'B2' | 'phrasal' | 'phrases' | 'own' | 'hard';
+type Filter = 'all' | 'reading' | 'own' | 'phrasal' | 'phrases' | 'hard';
 
 const FILTERS: [Filter, string][] = [
   ['all', 'All'],
-  ['B1', 'B1'],
-  ['B2', 'B2'],
-  ['phrasal', 'Phrasal verbs'],
-  ['phrases', 'Phrases'],
+  ['reading', 'From reading'],
   ['own', 'Mine'],
   ['hard', 'Tricky'],
+  ['phrasal', 'Phrasal verbs'],
+  ['phrases', 'Phrases'],
 ];
 
 const DECK_SIZE = 30;
 const FILTER_DECK: Record<Filter, string> = {
   all: 'Word cards',
-  B1: 'B1 cards',
-  B2: 'B2 cards',
+  reading: 'Words from reading',
   phrasal: 'Phrasal verb cards',
   phrases: 'Phrase cards',
   own: 'My word cards',
@@ -65,9 +64,8 @@ export function Dictionary() {
   const shown = all.filter((w) => {
     const st = d.states[w.id];
     switch (filter) {
-      case 'B1':
-      case 'B2':
-        if (w.level !== filter || w.kind !== 'word' || w.custom) return false;
+      case 'reading':
+        if (!w.ctx?.length) return false;
         break;
       case 'phrasal':
         if (!w.family) return false;
@@ -101,12 +99,13 @@ export function Dictionary() {
             <span>{w.ru}</span>
           </span>
           {m && <span class="chip chip-red">×{m.count}</span>}
-          <LevelChip item={w} />
+          {w.ctx?.length ? <span class="chip chip-read">READ</span> : <LevelChip item={w} />}
           <IconChevron class="chevron" />
         </button>
         {isOpen && (
           <div class="detail">
             <WordCard item={w} />
+            {w.ctx?.length ? <Contexts word={w} /> : null}
             <p class="muted small">{dueLabel(st, now)}</p>
             {w.custom && (
               <div class="row">
@@ -128,7 +127,7 @@ export function Dictionary() {
         <div class="stack-sm">
           <h1 class="title">Words</h1>
           <p class="subtitle">
-            {VOCAB.length} B1–B2 words and phrases · {d.custom.length} of your own
+            {d.custom.length} of your own · {d.custom.filter((w) => w.ctx?.length).length} from reading · {VOCAB.length} in the app
           </p>
         </div>
         <button type="button" class="icon-btn" onClick={() => setEditing('new')} aria-label="New word" title="New word">
@@ -170,12 +169,32 @@ export function Dictionary() {
                 Add your first word
               </button>
             </>
+          ) : filter === 'reading' ? (
+            <>
+              <p>Words you save while reading appear here, each with the sentence where you met it and a link back to the page.</p>
+              <button type="button" class="btn btn-primary" onClick={() => nav.go('read')}>
+                Open a magazine
+              </button>
+            </>
           ) : filter === 'hard' ? (
             <p>No tricky words yet. Words you get wrong will appear here.</p>
           ) : (
             <p>Nothing found.</p>
           )}
         </div>
+      ) : filter === 'reading' && !query.trim() ? (
+        bySource(shown).map(([title, words]) => (
+          <section class="section" key={title} aria-label={title}>
+            <div class="family-head">
+              <h2>{title}</h2>
+              <span class="spacer" />
+              <button type="button" class="btn btn-sm" onClick={() => nav.startSession({ kind: 'set', title, ids: words.map((w) => w.id) })}>
+                Practise
+              </button>
+            </div>
+            <div class="list">{words.map(renderRow)}</div>
+          </section>
+        ))
       ) : filter === 'phrasal' && !query.trim() ? (
         <>
           {BIG_FAMILIES.map((f) => (
@@ -232,19 +251,6 @@ function WordEditor({ word, custom, onClose }: { word: VocabItem | null; custom:
   );
 }
 
-function LevelSelect({ value, onChange }: { value: Level | null; onChange: (l: Level | null) => void }) {
-  return (
-    <div class="field">
-      <label for="w-level">Level</label>
-      <select id="w-level" value={value ?? ''} onChange={(e) => onChange((e.currentTarget.value || null) as Level | null)}>
-        <option value="">No level</option>
-        <option value="B1">B1</option>
-        <option value="B2">B2</option>
-      </select>
-    </div>
-  );
-}
-
 function OneWordForm({ word, custom, onDone }: { word: VocabItem | null; custom: VocabItem[]; onDone: () => void }) {
   const [draft, setDraft] = useState<WordDraft>({
     en: word?.en ?? '',
@@ -278,7 +284,7 @@ function OneWordForm({ word, custom, onDone }: { word: VocabItem | null; custom:
         <input id="w-en" value={draft.en} onInput={(e) => set({ en: e.currentTarget.value })} autocomplete="off" autocapitalize="off" lang="en" placeholder="kettle" />
         {builtIn && !word && (
           <span class="hint">
-            This word is already in the {builtIn.level} list (“{builtIn.ru}”). You can still add your own meaning or example.
+            This word is already in the app’s list (“{builtIn.ru}”). You can still add your own meaning or example.
           </span>
         )}
       </div>
@@ -303,7 +309,6 @@ function OneWordForm({ word, custom, onDone }: { word: VocabItem | null; custom:
         <label for="w-note">Note (optional)</label>
         <input id="w-note" value={draft.note} onInput={(e) => set({ note: e.currentTarget.value })} autocomplete="off" placeholder="put the kettle on = start boiling water" />
       </div>
-      <LevelSelect value={draft.level} onChange={(level) => set({ level })} />
       {error && <p class="error">{error}</p>}
       <button type="submit" class="btn btn-primary">
         {word ? 'Save' : 'Add word'}
@@ -314,7 +319,7 @@ function OneWordForm({ word, custom, onDone }: { word: VocabItem | null; custom:
 
 function BulkForm({ custom, onDone }: { custom: VocabItem[]; onDone: () => void }) {
   const [text, setText] = useState('');
-  const [level, setLevel] = useState<Level | null>(null);
+  const level: Level | null = null;
   const { drafts, errors } = parseBulk(text, level);
   const fresh = drafts.filter((dr, i) => !custom.some((w) => sameWord(w.en, dr.en)) && drafts.findIndex((x) => sameWord(x.en, dr.en)) === i);
   const room = Math.max(0, MAX_CUSTOM_WORDS - custom.length);
@@ -340,7 +345,6 @@ function BulkForm({ custom, onDone }: { custom: VocabItem[]; onDone: () => void 
         />
         <span class="hint">Format: word — translation — example (optional). A tab, “;” or “|” also works, so you can paste from a spreadsheet.</span>
       </div>
-      <LevelSelect value={level} onChange={setLevel} />
       {errors.length > 0 && (
         <div class="stack-sm">
           {errors.slice(0, 5).map((err) => (
@@ -357,4 +361,43 @@ function BulkForm({ custom, onDone }: { custom: VocabItem[]; onDone: () => void 
       </button>
     </form>
   );
+}
+
+/** Words from reading, grouped by the article they came from (newest article first). */
+function bySource(words: VocabItem[]): [string, VocabItem[]][] {
+  const groups = new Map<string, VocabItem[]>();
+  for (const w of words) {
+    const c = w.ctx![0];
+    const page = ISSUES_BY_ID[c.issue]?.pages.find((p) => p.id === c.page);
+    const title = page ? page.title : 'Other';
+    groups.set(title, [...(groups.get(title) ?? []), w]);
+  }
+  return [...groups];
+}
+
+/** Every sentence where the word was met, with a jump back to the page. */
+function Contexts({ word }: { word: VocabItem }) {
+  const nav = useNav();
+  return (
+    <div class="contexts stack-sm">
+      <p class="eyebrow">Met while reading</p>
+      {word.ctx!.map((c, i) => {
+        const iss = ISSUES_BY_ID[c.issue];
+        const page = iss?.pages.find((p) => p.id === c.page);
+        return (
+          <button type="button" class="context" key={i} onClick={() => iss && page && nav.openReader(iss.id, page.id, c.at)}>
+            <span class="example">{highlightWord(c.text, word.en)}</span>
+            <span class="muted small">
+              {iss ? `${iss.magazine} · ${page?.title ?? ''}` : 'Magazine'} ›
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function highlightWord(text: string, en: string) {
+  const parts = markTarget(text, en).split('*');
+  return parts.map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : p));
 }
