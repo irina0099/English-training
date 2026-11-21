@@ -1,5 +1,4 @@
 import { saveItem } from '../storage';
-import { ISSUES } from './issues';
 import type { Issue, MagPage, PageNotes } from './types';
 
 // Highlights, Markup and reading progress live in their own storage key, so the
@@ -144,13 +143,13 @@ export function setMenuStyle(menu: 'system' | 'app') {
   save({ ...data, menu });
 }
 
-/** The learner's own magazines first, newest first, then the demo issue. */
+/** The learner's magazines, newest first. */
 export function allIssues(d: ReadingData = data): Issue[] {
-  return [...(d.issues ?? []).slice().sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0)), ...ISSUES];
+  return (d.issues ?? []).slice().sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0));
 }
 
 export function getIssue(id: string): Issue | undefined {
-  return (data.issues ?? []).find((i) => i.id === id) ?? ISSUES.find((i) => i.id === id);
+  return (data.issues ?? []).find((i) => i.id === id);
 }
 
 /** Adds a magazine, or puts a fresh file under one added before (its notes stay). Returns the replaced file key. */
