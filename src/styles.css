@@ -684,6 +684,8 @@ p {
 
 .list > * {
   position: relative;
+  /* Rows keep their height: in a sheet with many rows they must scroll, not squeeze together. */
+  flex-shrink: 0;
 }
 
 .list > * + *::before {
@@ -1413,6 +1415,11 @@ button.list-item:disabled .list-item-main b {
   flex-direction: column;
   gap: 16px;
   animation: sheet-up 0.45s var(--ease-sheet);
+}
+
+/* The sheet scrolls when its content is taller than the screen; nothing in it is squeezed to fit. */
+.modal > * {
+  flex-shrink: 0;
 }
 
 .modal-head {
