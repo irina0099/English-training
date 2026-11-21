@@ -1859,3 +1859,12 @@ body > .modal-backdrop {
 .bar-hl.on-underline {
   background: linear-gradient(transparent 60%, #ff3b30 60%) #fff;
 }
+
+/* "Remove magazine": what goes with it, in the sheet's own words. */
+.remove-text {
+  margin: 0;
+  padding-inline: 4px;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--label-2);
+}

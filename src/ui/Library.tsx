@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { packAt } from '../reading/docview';
 import { annotatedPdf, shareFile } from '../reading/exportpdf';
 import { deleteFile, ImportError, importPdf, loadThumb, redetect } from '../reading/pdf';
-import { addIssue, allIssues, articleAt, getIssue, getReading, notesOf, placeOf, removeIssue, resumeOf, seenPages, setMenuStyle, subscribeReading, updateIssuePages } from '../reading/store';
+import { addIssue, allIssues, articleAt, getIssue, getReading, notesOf, placeOf, resumeOf, seenPages, setMenuStyle, subscribeReading, updateIssuePages } from '../reading/store';
 import type { Issue, MagPage } from '../reading/types';
-import { ConfirmButton } from './common';
 import { useNav } from './context';
 import { useData } from './hooks';
 import { IconCheck, IconChevron, IconPlus } from './icons';
@@ -271,17 +270,6 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
           </div>
         ))}
       {open && iss.file && <SaveCopy iss={iss} />}
-      {open && iss.file && (
-        <ConfirmButton
-          class="btn btn-sm btn-ghost"
-          label="Remove this magazine"
-          confirmLabel="Remove it and its notes"
-          onConfirm={() => {
-            removeIssue(iss.id);
-            deleteFile(iss.file!).catch(() => {});
-          }}
-        />
-      )}
     </section>
   );
 }
@@ -337,7 +325,7 @@ function PageGrid({ iss, total, here }: { iss: Issue; total: number; here?: numb
  * for iCloud Drive via the share sheet. Two taps, because iPhone opens the share sheet only
  * straight after a tap, and preparing a large magazine takes a few seconds.
  */
-export function SaveCopy({ iss }: { iss: Issue }) {
+export function SaveCopy({ iss, onSaved }: { iss: Issue; onSaved?: () => void }) {
   const [state, setState] = useState<'idle' | 'busy' | 'ready' | 'done' | 'error'>('idle');
   const [blob, setBlob] = useState<Blob | null>(null);
   const name = `${[iss.magazine, iss.issue].filter(Boolean).join(' ')} — with notes.pdf`;
@@ -359,6 +347,7 @@ export function SaveCopy({ iss }: { iss: Issue }) {
     if (how !== 'cancelled') {
       setState('done');
       setBlob(null);
+      onSaved?.();
     }
   };
 
@@ -367,7 +356,7 @@ export function SaveCopy({ iss }: { iss: Issue }) {
       <b>A copy with your notes</b>
       <span class="muted small">
         {count
-          ? `The magazine as a PDF with your ${count} highlights, drawings and notes on its pages. Save it to Files → iCloud Drive; it opens in Preview and Books on any device.`
+          ? `The magazine as a PDF with ${count === 1 ? 'your note' : `your ${count} highlights, drawings and notes`} on its pages. Save it to Files → iCloud Drive; it opens in Preview and Books on any device.`
           : 'Add highlights, drawings or text notes while reading, then save the magazine with them as a PDF to iCloud Drive.'}
       </span>
       {state === 'ready' ? (

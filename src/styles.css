@@ -440,6 +440,12 @@ p {
   color: var(--blue);
 }
 
+/* A destructive row in a list, like "Delete" in iOS menus. */
+.list-item.danger b {
+  color: var(--red);
+  font-weight: 400;
+}
+
 .btn-danger {
   background: var(--red-tint);
   color: var(--red-text);

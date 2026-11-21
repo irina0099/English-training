@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DocView, packAt, UNITS, unpackAt } from '../reading/docview';
-import { getIssue, markPageRead, markRead, notesOf, seenPages, setLast, setPlace, subscribeReading, updateNotes, type Place } from '../reading/store';
+import { deleteFile } from '../reading/pdf';
+import { getIssue, markPageRead, markRead, notesOf, removeIssue, seenPages, setLast, setPlace, subscribeReading, updateNotes, type Place } from '../reading/store';
 import { rangeFor, sentenceAround, wordAt } from '../reading/text';
-import type { Highlight, HighlightColor, PageNotes, Stroke, TextNote, Tool } from '../reading/types';
+import type { Highlight, HighlightColor, Issue, PageNotes, Stroke, TextNote, Tool } from '../reading/types';
 import { speak } from '../tts';
 import { Modal } from './common';
 import { IconBack, IconCheck, IconChevron, IconList, IconMarkup, IconMore, IconRedo, IconShare, IconSpeaker, IconUndo } from './icons';
@@ -157,7 +158,10 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
 
   /** Remembers the page at the top of the screen and how far down it, to open there next time. */
   const placeTimer = useRef(0);
+  /** Set once the magazine is removed: closing must not save a place for it again. */
+  const removed = useRef(false);
   const savePlace = () => {
+    if (removed.current) return;
     const dv = dvRef.current;
     const scroller = scrollerRef.current;
     if (!dv || !scroller || !dv.slots.length) return;
@@ -321,7 +325,7 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
   const lastTap = useRef({ t: 0, x: 0, y: 0 });
   const chromeTimer = useRef(0);
   const [chrome, setChrome] = useState(true);
-  const [panel, setPanel] = useState<'contents' | 'more' | null>(null);
+  const [panel, setPanel] = useState<'contents' | 'more' | 'remove' | null>(null);
   const draft = useRef<{ stroke: Stroke; path: SVGPathElement } | null>(null);
   const drag = useRef({ moved: false, x: 0, y: 0 });
 
@@ -630,7 +634,28 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
               </span>
             </button>
           </div>
+          <div class="list">
+            <button type="button" class="list-item danger" onClick={() => setPanel('remove')}>
+              <span class="list-item-main">
+                <b>Remove this magazine</b>
+              </span>
+            </button>
+          </div>
         </Modal>
+      )}
+      {panel === 'remove' && (
+        <RemoveSheet
+          iss={issue}
+          onCancel={() => setPanel(null)}
+          onRemove={() => {
+            removed.current = true;
+            clearTimeout(placeTimer.current);
+            setPanel(null);
+            onClose();
+            removeIssue(issue.id);
+            if (issue.file) deleteFile(issue.file).catch(() => {});
+          }}
+        />
       )}
 
       {sheet?.kind === 'lookup' && <LookupSheet text={sheet.text} sentence={sheet.sentence} onAdd={() => setSheet({ ...sheet, kind: 'add' })} onClose={() => setSheet(null)} />}
@@ -649,6 +674,35 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Removing a magazine from the reader's ••• menu. Its notes go with it, so when it has any,
+ * the sheet first offers a copy with them for iCloud Drive; the learner can skip it.
+ */
+function RemoveSheet({ iss, onCancel, onRemove }: { iss: Issue; onCancel: () => void; onRemove: () => void }) {
+  const notes = notesOf(iss.id, UNIT);
+  const count = notes.hl.length + notes.strokes.length + notes.texts.length;
+  const [saved, setSaved] = useState(false);
+  const name = [iss.magazine, iss.issue].filter(Boolean).join(' ');
+  return (
+    <Modal title="Remove magazine" onClose={onCancel}>
+      <p class="remove-text">
+        {count
+          ? `“${name}” and its ${count} ${count === 1 ? 'note' : 'highlights, drawings and notes'} will be deleted from this phone. You can first save a copy of the magazine with your notes to iCloud Drive.`
+          : `“${name}” will be deleted from this phone, with the page you stopped on. Words you saved from it stay in Words.`}
+      </p>
+      {count > 0 && <SaveCopy iss={iss} onSaved={() => setSaved(true)} />}
+      <div class="stack-sm">
+        <button type="button" class="btn btn-danger btn-block" onClick={onRemove}>
+          {count && !saved ? 'Remove without a copy' : 'Remove magazine'}
+        </button>
+        <button type="button" class="btn btn-block" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
   );
 }
 

@@ -89,7 +89,12 @@ export class DocView {
     for (const s of this.slots) {
       this.release(s, true);
       // Frees what pdf.js keeps for the page (its drawing instructions, its text).
-      s.page.cleanup();
+      // The document may already be closed (the magazine was removed): nothing left to free.
+      try {
+        s.page.cleanup();
+      } catch {
+        // Already freed with its document.
+      }
     }
   }
 
