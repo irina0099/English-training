@@ -57,9 +57,12 @@ function db(): Promise<IDBDatabase> {
 async function tx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const d = await db();
   return new Promise((resolve, reject) => {
-    const req = run(d.transaction(STORE, mode).objectStore(STORE));
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    const t = d.transaction(STORE, mode);
+    const req = run(t.objectStore(STORE));
+    // A request can succeed and its transaction still abort (Safari runs out of room at commit),
+    // so the file is only saved once the whole transaction is complete.
+    t.oncomplete = () => resolve(req.result);
+    t.onabort = t.onerror = () => reject(t.error ?? req.error);
   });
 }
 
@@ -227,6 +230,8 @@ export class PdfView {
   private m: PdfJs | null = null;
   private wanted: number[] = [];
   private drawing = false;
+  /** Pages that couldn't be drawn (out of memory): tried again once they come back into view. */
+  private failed = new Set<number>();
   private alive = true;
   /** Picture width, in device pixels, when the page fills the screen width. */
   private baseWidth = 1200;
@@ -282,12 +287,16 @@ export class PdfView {
 
   /** Draws the given pages (numbers from 1, most important first) and forgets far-away ones. */
   show(pages: number[], baseWidth: number) {
-    this.baseWidth = Math.round(baseWidth);
+    const width = Math.round(baseWidth);
+    if (width !== this.baseWidth) this.failed.clear();
+    this.baseWidth = width;
     this.wanted = pages.filter((n) => n >= 1 && n <= this.slots.length);
     const keep = new Set<number>();
     for (const n of this.wanted) for (let k = n - 1; k <= n + 1; k++) keep.add(k);
     this.slots.forEach((slot, i) => {
-      if (!keep.has(i + 1)) this.drop(slot);
+      if (keep.has(i + 1)) return;
+      this.drop(slot);
+      this.failed.delete(i + 1);
     });
     void this.drain();
   }
@@ -306,9 +315,11 @@ export class PdfView {
     this.drawing = true;
     try {
       for (;;) {
-        const n = this.wanted.find((k) => !this.slots[k - 1]?.querySelector('.pdf-img'));
+        const n = this.wanted.find((k) => !this.failed.has(k) && !this.slots[k - 1]?.querySelector('.pdf-img'));
         if (!n || !this.alive) break;
-        await this.paint(n, this.baseWidth);
+        // A page that didn't draw must not be drawn again and again: that would never end.
+        const ok = await this.paint(n, this.baseWidth).catch(() => false);
+        if (!ok) this.failed.add(n);
       }
     } finally {
       this.drawing = false;

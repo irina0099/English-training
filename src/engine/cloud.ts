@@ -57,6 +57,7 @@ export async function startCloudSync(onStatus: (s: CloudStatus) => void): Promis
   const runtime = (window as unknown as { claude?: ClaudeRuntime }).claude;
   if (!runtime?.use) return;
   onStatus('connecting');
+  let off: (() => void) | undefined;
   try {
     const [db, user] = (await Promise.all([runtime.use('db'), runtime.use('user')])) as [Db | null, UserCap | null];
     const uid = db && user ? await user.id() : null;
@@ -75,11 +76,43 @@ export async function startCloudSync(onStatus: (s: CloudStatus) => void): Promis
       written[s] = stamp;
     };
 
+    // Listen before the first read: answers given while we connect must reach the cloud too.
+    // Writes are coalesced and go one at a time, as the store asks.
+    const pending = new Set<Section>();
+    let ready = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let chain = Promise.resolve();
+    const flush = () => {
+      clearTimeout(timer);
+      const sections = [...pending];
+      pending.clear();
+      chain = chain
+        .then(async () => {
+          for (const s of sections) await write(s);
+          onStatus('synced');
+        })
+        .catch(() => onStatus('error'));
+    };
+    off = onLocalChange((_d, sections) => {
+      sections.forEach((s) => pending.add(s));
+      if (!ready) return;
+      clearTimeout(timer);
+      timer = setTimeout(flush, WRITE_DELAY);
+    });
+    window.addEventListener('pagehide', () => {
+      if (ready && pending.size) flush();
+    });
+
+    const remote = await Promise.all(
+      SECTIONS.map(async (s) => {
+        const snap = await docs.doc(s).get();
+        return [s, snap.exists ? snap.data() : undefined] as const;
+      }),
+    );
+    // Taken only now, with no await before replaceData: nothing the learner did meanwhile is lost.
     let next = getData();
     const toWrite: Section[] = [];
-    for (const s of SECTIONS) {
-      const snap = await docs.doc(s).get();
-      const body = snap.exists ? snap.data() : undefined;
+    for (const [s, body] of remote) {
       const remoteAt = Number(body?.updatedAt) || 0;
       if (body && remoteAt > next.stamps[s]) {
         next = merge(next, s, body);
@@ -92,31 +125,11 @@ export async function startCloudSync(onStatus: (s: CloudStatus) => void): Promis
     }
     if (next !== getData()) replaceData(next);
     for (const s of toWrite) await write(s);
+    ready = true;
     onStatus('synced');
-
-    // Writes are coalesced and go one at a time, as the store asks.
-    const pending = new Set<Section>();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let chain = Promise.resolve();
-    const flush = () => {
-      const sections = [...pending];
-      pending.clear();
-      chain = chain
-        .then(async () => {
-          for (const s of sections) await write(s);
-          onStatus('synced');
-        })
-        .catch(() => onStatus('error'));
-    };
-    onLocalChange((_d, sections) => {
-      sections.forEach((s) => pending.add(s));
-      clearTimeout(timer);
-      timer = setTimeout(flush, WRITE_DELAY);
-    });
-    window.addEventListener('pagehide', () => {
-      if (pending.size) flush();
-    });
+    if (pending.size) flush();
   } catch {
+    off?.();
     onStatus('error');
   }
 }
