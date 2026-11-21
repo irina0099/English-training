@@ -212,6 +212,55 @@ export interface PageSlot {
  * layer that matches the printed words. Text layers come first (they are quick), so word
  * selection works while the pictures are still being drawn.
  */
+async function drawPage(page: PDFPageProxy, viewport: ReturnType<PDFPageProxy['getViewport']>): Promise<Blob | null> {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(viewport.width);
+  canvas.height = Math.round(viewport.height);
+  await page.render({ canvas, viewport }).promise;
+  const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.9));
+  // Free the canvas memory right away: iPhone has a tight limit for canvases.
+  canvas.width = canvas.height = 0;
+  return blob;
+}
+
+/** Safari's limit for one canvas is about 16.7 million pixels. */
+const MAX_PIXELS = 16_000_000;
+
+/**
+ * Redraws one page sharper for the current zoom, like Preview does once you stop zooming.
+ * `width` is the wanted picture width in device pixels. Returns false if nothing changed.
+ */
+export async function sharpenPage(slot: HTMLElement, key: string, width: number, isCurrent: () => boolean): Promise<boolean> {
+  const n = Number(slot.dataset.page);
+  const img = slot.querySelector<HTMLImageElement>('.pdf-img');
+  if (!n || !img) return false;
+  const doc = await openDoc(key);
+  const page = await doc.getPage(n);
+  const base = page.getViewport({ scale: 1 });
+  const cap = Math.sqrt(MAX_PIXELS * (base.width / base.height));
+  const target = Math.min(width, cap);
+  if (target <= Number(slot.dataset.width ?? 0) * 1.15) return false;
+  const blob = await drawPage(page, page.getViewport({ scale: target / base.width }));
+  if (!blob || !isCurrent()) return false;
+  const old = img.src;
+  img.src = URL.createObjectURL(blob);
+  slot.dataset.width = String(Math.round(target));
+  if (!slot.dataset.base) slot.dataset.base = old;
+  else URL.revokeObjectURL(old);
+  return true;
+}
+
+/** Puts a sharpened page back to its normal picture, to save memory. */
+export function softenPage(slot: HTMLElement) {
+  const img = slot.querySelector<HTMLImageElement>('.pdf-img');
+  const base = slot.dataset.base;
+  if (!img || !base) return;
+  URL.revokeObjectURL(img.src);
+  img.src = base;
+  delete slot.dataset.base;
+  slot.dataset.width = String(Math.round(PAGE_WIDTH * QUALITY));
+}
+
 export async function layoutPdf(root: HTMLElement, key: string, from: number, to: number, isCurrent: () => boolean, onText: () => void): Promise<void> {
   const m = await pdfjs();
   const doc = await openDoc(key);
@@ -237,13 +286,9 @@ export async function layoutPdf(root: HTMLElement, key: string, from: number, to
   for (const { page, slot, scale } of pages) {
     if (!isCurrent()) return;
     const viewport = page.getViewport({ scale: scale * QUALITY });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(viewport.width);
-    canvas.height = Math.round(viewport.height);
-    await page.render({ canvas, viewport }).promise;
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.9));
-    canvas.width = canvas.height = 0;
+    const blob = await drawPage(page, viewport);
     if (!blob || !isCurrent()) return;
+    slot.dataset.width = String(Math.round(viewport.width));
     const img = document.createElement('img');
     img.className = 'pdf-img';
     img.alt = '';
@@ -253,42 +298,17 @@ export async function layoutPdf(root: HTMLElement, key: string, from: number, to
   }
 }
 
-let measureCtx: CanvasRenderingContext2D | null | undefined;
-
+/**
+ * The invisible words over the page picture, placed by pdf.js's own text layer: it measures the
+ * fonts it falls back to, so the selection sits on the printed words.
+ */
 async function buildTextLayer(m: PdfJs, page: PDFPageProxy, viewport: ReturnType<PDFPageProxy['getViewport']>, el: HTMLElement) {
   const content = await page.getTextContent();
-  const frag = document.createDocumentFragment();
-  for (const item of content.items) {
-    if (!('str' in item)) continue;
-    if (item.str) {
-      const tx = m.Util.transform(viewport.transform, item.transform);
-      const angle = Math.atan2(tx[1], tx[0]);
-      const size = Math.hypot(tx[2], tx[3]);
-      const style = content.styles[item.fontName];
-      const family = style?.fontFamily ?? 'sans-serif';
-      const ascent = style?.ascent ? style.ascent : style?.descent ? 1 + style.descent : 0.8;
-      const left = tx[4] + Math.sin(angle) * size * ascent;
-      const top = tx[5] - Math.cos(angle) * size * ascent;
-      const span = document.createElement('span');
-      span.textContent = item.str;
-      span.style.left = `${left.toFixed(2)}px`;
-      span.style.top = `${top.toFixed(2)}px`;
-      span.style.fontSize = `${size.toFixed(2)}px`;
-      span.style.fontFamily = family;
-      let transform = angle ? `rotate(${angle}rad)` : '';
-      measureCtx ??= document.createElement('canvas').getContext('2d');
-      const measure = measureCtx;
-      if (measure) {
-        measure.font = `${size}px ${family}`;
-        const natural = measure.measureText(item.str).width;
-        const target = (style?.vertical ? item.height : item.width) * viewport.scale;
-        if (natural > 0 && target > 0) transform += ` scaleX(${(target / natural).toFixed(4)})`;
-      }
-      if (transform) span.style.transform = transform;
-      frag.appendChild(span);
-    }
-    // Keep words on separate lines apart in the page's text.
-    if (item.hasEOL) frag.appendChild(document.createTextNode('\n'));
-  }
-  el.appendChild(frag);
+  el.classList.add('textLayer');
+  el.style.setProperty('--total-scale-factor', String(viewport.scale));
+  const layer = new m.TextLayer({ textContentSource: content, container: el, viewport });
+  await layer.render();
+  // Line ends come out as <br>: give the page's text a space there, so the last word of
+  // a line and the first word of the next don't run together.
+  for (const br of el.querySelectorAll('br')) br.before(document.createTextNode(' '));
 }

@@ -1288,20 +1288,42 @@ body > .modal-backdrop {
   user-select: none;
 }
 
+/* The text layer, as pdf.js lays it out (rules from its viewer stylesheet). */
 .pdf-text {
   position: absolute;
   inset: 0;
-  overflow: hidden;
+  overflow: clip;
   line-height: 1;
+  text-align: initial;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
   color: transparent;
-  white-space: pre;
 }
 
-.pdf-text span {
+.pdf-text :is(span, br) {
+  color: transparent;
   position: absolute;
   white-space: pre;
-  transform-origin: 0 0;
   cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.pdf-text > :not(.markedContent),
+.pdf-text .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-text .markedContent {
+  display: contents;
 }
 
 .pdf-text ::selection {

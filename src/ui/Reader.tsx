@@ -3,7 +3,7 @@ import { saveCustomWord } from '../engine/store';
 import { createCustomWord, sameWord } from '../engine/words';
 import { define, findKnown, googleTranslateUrl, lemmaCandidates, translate, type Definition } from '../reading/lookup';
 import { getIssue, getReading, markRead, notesOf, setLast, subscribeReading, updateNotes } from '../reading/store';
-import { layoutPdf } from '../reading/pdf';
+import { layoutPdf, sharpenPage, softenPage } from '../reading/pdf';
 import { boxesFor, indexText, offsetAt, sentenceAround, wordAt, type Box, type TextIndex } from '../reading/text';
 import { PAGE_WIDTH, type Highlight, type HighlightColor, type PageNotes, type Stroke, type TextNote, type Tool } from '../reading/types';
 import { speak } from '../tts';
@@ -13,7 +13,7 @@ import { useData } from './hooks';
 import { IconBack, IconChevron, IconMarkup, IconRedo, IconSpeaker, IconUndo } from './icons';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
-const MAX_ZOOM = 6;
+const MAX_ZOOM = 4;
 const PAD = 12;
 const LONG_PRESS = 420;
 /** How far to pull past the end of an article to open the next one. */
@@ -57,14 +57,35 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
   const contentRef = useRef<HTMLDivElement>(null);
   const idxRef = useRef<TextIndex | null>(null);
   const [height, setHeight] = useState(800);
-  const [view, setView] = useState<View>({ s: 1, x: 0, y: PAD });
+  // While a finger moves, the page is moved directly on screen (no re-render per frame);
+  // the rendered state catches up a moment after the movement stops.
+  const [view, setViewState] = useState<View>({ s: 1, x: 0, y: PAD });
   const viewRef = useRef(view);
-  viewRef.current = view;
+  const overRef = useRef(0);
+  const syncTimer = useRef(0);
+  const paint = () => {
+    const el = paperRef.current;
+    if (el) el.style.transform = transformOf(viewRef.current, overRef.current);
+  };
+  const setView = (v: View) => {
+    viewRef.current = v;
+    paint();
+    clearTimeout(syncTimer.current);
+    syncTimer.current = window.setTimeout(() => setViewState(viewRef.current), 90);
+  };
   const [fit, setFit] = useState(1);
   const [layoutTick, setLayoutTick] = useState(0);
   const [loadError, setLoadError] = useState(false);
   /** How far the page is pulled past its end (−) or start (+), to move to the next or previous article. */
-  const [pull, setPull] = useState(0);
+  /** Shown hint while pulling: 0 none, ±1 keep pulling, ±2 release (− = next, + = previous). */
+  const [pull, setPullState] = useState(0);
+  const setPull = (over: number) => {
+    overRef.current = over;
+    paint();
+    const a = Math.abs(over);
+    const bucket = Math.sign(over) * (a >= PULL ? 2 : a > 12 ? 1 : 0);
+    setPullState((cur) => (cur === bucket ? cur : bucket));
+  };
   const landEnd = useRef(false);
   /** The learner has scrolled or zoomed this article herself (landing on its end doesn't count as reading it). */
   const scrolledHere = useRef(false);
@@ -140,6 +161,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       alive = false;
       ro.disconnect();
       for (const img of el.querySelectorAll('img')) URL.revokeObjectURL(img.src);
+      for (const slot of el.querySelectorAll<HTMLElement>('[data-base]')) URL.revokeObjectURL(slot.dataset.base!);
     };
   }, [issueId, mp.id]);
 
@@ -182,6 +204,32 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
     const y = h + PAD * 2 <= H ? PAD : Math.min(PAD, Math.max(H - h - PAD - 64, v.y));
     return { s, x, y };
   };
+
+  // Sharp pages when zoomed in: once the view settles, redraw the page in view at the
+  // resolution the screen needs (only one page at a time, to stay within iPhone's memory).
+  const sharpened = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!mp.pdf || !issue.file) return;
+    const t = setTimeout(() => {
+      const vp = viewportRef.current;
+      const el = contentRef.current;
+      if (!vp || !el) return;
+      const v = viewRef.current;
+      const middle = (vp.clientHeight / 2 - v.y) / v.s;
+      const slot = [...el.querySelectorAll<HTMLElement>('.pdf-page')].find((p) => middle >= p.offsetTop - 6 && middle <= p.offsetTop + p.offsetHeight + 6);
+      if (!slot) return;
+      const want = PAGE_WIDTH * v.s * (window.devicePixelRatio || 1);
+      if (sharpened.current && sharpened.current !== slot) {
+        softenPage(sharpened.current);
+        sharpened.current = null;
+      }
+      const page = mp.id;
+      sharpenPage(slot, issue.file!, want, () => page === mp.id && slot.isConnected).then((done) => {
+        if (done) sharpened.current = slot;
+      });
+    }, 250);
+    return () => clearTimeout(t);
+  }, [view, layoutTick]);
 
   // Finishing the page: reaching its end counts as read.
   useEffect(() => {
@@ -701,7 +749,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
             <p>This magazine’s file isn’t on this device any more. Add the PDF again in Read.</p>
           </div>
         )}
-        <div class="paper" ref={paperRef} style={{ width: `${PAGE_WIDTH}px`, transform: `translate(${view.x}px, ${view.y + Math.sign(pull) * Math.min(110, Math.abs(pull) * 0.45)}px) scale(${view.s})` }}>
+        <div class="paper" ref={paperRef} style={{ width: `${PAGE_WIDTH}px`, transform: transformOf(viewRef.current, overRef.current) }}>
           <div class={`mag ${issue.theme}`} ref={contentRef} lang="en" />
           <div class="paper-layer" aria-hidden="true">
             {hlBoxes.map(({ h, boxes }) =>
@@ -762,9 +810,9 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
           </div>
         )}
 
-        {Math.abs(pull) > 12 && (pull < 0 ? issue.pages[index + 1] : issue.pages[index - 1]) && (
-          <div class={`pull-hint ${pull < 0 ? 'at-bottom' : 'at-top'} ${Math.abs(pull) >= PULL ? 'ready' : ''}`} aria-live="polite">
-            <span>{pull < 0 ? (Math.abs(pull) >= PULL ? 'Release for next' : 'Keep scrolling for next') : Math.abs(pull) >= PULL ? 'Release for previous' : 'Pull for previous'}</span>
+        {pull !== 0 && (pull < 0 ? issue.pages[index + 1] : issue.pages[index - 1]) && (
+          <div class={`pull-hint ${pull < 0 ? 'at-bottom' : 'at-top'} ${Math.abs(pull) === 2 ? 'ready' : ''}`} aria-live="polite">
+            <span>{pull < 0 ? (pull === -2 ? 'Release for next' : 'Keep scrolling for next') : pull === 2 ? 'Release for previous' : 'Pull for previous'}</span>
             <b>{(pull < 0 ? issue.pages[index + 1] : issue.pages[index - 1]).title}</b>
           </div>
         )}
@@ -873,6 +921,12 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
 }
 
 const round = (x: number) => Math.round(x * 10) / 10;
+
+/** The page's position on screen, with a rubber-band stretch while pulling past either end. */
+function transformOf(v: View, over: number): string {
+  const stretch = Math.sign(over) * Math.min(110, Math.abs(over) * 0.45);
+  return `translate3d(${v.x}px, ${v.y + stretch}px, 0) scale(${v.s})`;
+}
 
 /** A smooth path through the stroke's points. */
 function strokePath(pts: number[]): string {
