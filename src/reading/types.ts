@@ -26,6 +26,8 @@ export interface Issue {
   /** Small picture of the cover, as a data URL. */
   thumb?: string;
   addedAt?: number;
+  /** The device refused to store the file: it works until the app is closed. */
+  unsaved?: boolean;
 }
 
 /** Pages are laid out at this width, like a printed page, and scaled to the screen. */

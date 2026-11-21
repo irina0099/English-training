@@ -46,14 +46,37 @@ export const deleteFile = (key: string) => tx('readwrite', (s) => s.delete(key))
 // ——— Documents ———
 
 const docs = new Map<string, Promise<PDFDocumentProxy>>();
+/** Files that couldn't be saved on the device: readable until the app is closed. */
+const inMemory = new Map<string, ArrayBuffer>();
+
+/** An import step that failed, with the browser's reason, so the message can say what went wrong. */
+export class ImportError extends Error {
+  constructor(
+    public step: string,
+    cause: unknown,
+  ) {
+    super(`${step}: ${cause instanceof Error ? `${cause.name} ${cause.message}` : String(cause)}`);
+  }
+}
+
+async function step<T>(name: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    throw new ImportError(name, e);
+  }
+}
 
 export function openDoc(key: string): Promise<PDFDocumentProxy> {
   if (!docs.has(key)) {
     const p = (async () => {
-      const blob = await tx<Blob | undefined>('readonly', (s) => s.get(key));
-      if (!blob) throw new Error('missing');
+      const kept = inMemory.get(key);
+      const stored = kept ?? (await tx<ArrayBuffer | Blob | undefined>('readonly', (s) => s.get(key)));
+      if (!stored) throw new Error('missing');
+      const buf = stored instanceof Blob ? await stored.arrayBuffer() : stored;
       const m = await pdfjs();
-      return m.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+      // pdf.js hands the bytes to its worker, so give it a copy and keep the original.
+      return m.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise;
     })();
     p.catch(() => docs.delete(key));
     docs.set(key, p);
@@ -69,12 +92,21 @@ async function pageText(page: PDFPageProxy): Promise<string> {
 /** Saves the file and works out its contents: a known issue's map, the PDF's own outline, or page by page. */
 export async function importPdf(file: File, onStep: (text: string) => void): Promise<Issue> {
   const key = `pdf-${Date.now().toString(36)}`;
-  onStep('Saving the file…');
-  await tx('readwrite', (s) => s.put(file, key));
+  onStep('Loading the file…');
+  // Raw bytes, not the File itself: Safari on iPhone often can't keep a File in IndexedDB.
+  const buf = await step('read file', () => file.arrayBuffer());
+  onStep('Saving it on this device…');
+  let saved = true;
+  try {
+    await tx('readwrite', (s) => s.put(buf, key));
+  } catch {
+    saved = false;
+    inMemory.set(key, buf);
+  }
   onStep('Reading the pages…');
-  const doc = await openDoc(key);
-  const first = await doc.getPage(1);
-  const firstText = await pageText(first);
+  const doc = await step('open PDF', () => openDoc(key));
+  const first = await step('read page 1', () => doc.getPage(1));
+  const firstText = await step('read text', () => pageText(first));
   const map = findMap(doc.numPages, firstText);
   const name = file.name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim();
 
@@ -89,7 +121,7 @@ export async function importPdf(file: File, onStep: (text: string) => void): Pro
   }
 
   onStep('Drawing the cover…');
-  const thumb = await renderThumb(first);
+  const thumb = await renderThumb(first).catch(() => undefined);
   return {
     id: key,
     magazine: map?.magazine ?? name,
@@ -101,6 +133,7 @@ export async function importPdf(file: File, onStep: (text: string) => void): Pro
     file: key,
     thumb,
     addedAt: Date.now(),
+    ...(saved ? {} : { unsaved: true }),
   };
 }
 

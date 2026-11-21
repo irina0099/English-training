@@ -9,6 +9,12 @@ export default defineConfig({
   build: {
     target: 'es2020',
     modulePreload: false,
+    rollupOptions: {
+      output: {
+        // Safari can refuse a worker served as .mjs; the pdf.js worker ships as .js.
+        assetFileNames: (info) => (info.names?.[0]?.endsWith('.mjs') ? 'assets/[name]-[hash].js' : 'assets/[name]-[hash][extname]'),
+      },
+    },
   },
   test: {
     environment: 'node',

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { deleteFile, importPdf } from '../reading/pdf';
+import { deleteFile, ImportError, importPdf } from '../reading/pdf';
 import { addIssue, allIssues, getIssue, getReading, notesOf, removeIssue, setMenuStyle, subscribeReading } from '../reading/store';
 import type { Issue, MagPage } from '../reading/types';
 import { ConfirmButton } from './common';
@@ -45,8 +45,9 @@ export function Library() {
       const issue = await importPdf(file, setStep);
       addIssue(issue);
       setOpen(issue.id);
-    } catch {
-      setError('Couldn’t open this file. Check that it is a PDF and try again.');
+    } catch (e) {
+      const why = e instanceof ImportError ? e.message : e instanceof Error ? `${e.name} ${e.message}` : String(e);
+      setError(`Couldn’t open this file. Check that it is a PDF and that it is downloaded to the phone (not only in iCloud), then try again. Details: ${why}`);
     } finally {
       setStep('');
       if (fileRef.current) fileRef.current.value = '';
@@ -173,6 +174,7 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
         <div class="issue-info">
           <b>{[iss.magazine, iss.issue].filter(Boolean).join(' ')}</b>
           <span class="muted small">{iss.file ? `${iss.pages.length} articles` : 'Demo issue'}</span>
+          {iss.unsaved && <span class="error small">This phone didn’t let the app keep the file: it will be gone after you close the app.</span>}
           <div class="bar" role="img" aria-label={`${read} of ${iss.pages.length} read`}>
             <i class="known" style={{ width: `${(read / iss.pages.length) * 100}%` }} />
           </div>
