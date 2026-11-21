@@ -1,4 +1,5 @@
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import { detectArticles, type TextRun } from './detect';
 import { findMap } from './maps';
 import type { Issue, MagPage } from './types';
 
@@ -146,9 +147,7 @@ export async function importPdf(file: File, onStep: (text: string) => void): Pro
     pages = map.articles.map((a, i) => ({ id: `a${i}`, topic: a.topic, title: a.title, dek: a.dek, html: '', pdf: { from: a.from, to: a.to } }));
   } else {
     pages = await fromOutline(doc);
-    if (!pages.length) {
-      pages = Array.from({ length: doc.numPages }, (_, i) => ({ id: `p${i + 1}`, topic: 'Pages', title: `Page ${i + 1}`, html: '', pdf: { from: i + 1, to: i + 1 } }));
-    }
+    if (!pages.length) pages = await findArticles(doc, onStep);
   }
 
   onStep('Drawing the cover…');
@@ -174,6 +173,31 @@ const slug = (s: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9а-яё]+/gi, '-')
     .replace(/^-|-$/g, '') || 'magazine';
+
+/** Reads every page's text and finds where articles begin (see detect.ts). */
+async function findArticles(doc: PDFDocumentProxy, onStep: (text: string) => void): Promise<MagPage[]> {
+  const runs: TextRun[][] = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    if (n % 8 === 1) onStep(`Finding the articles… page ${n} of ${doc.numPages}`);
+    const page = await doc.getPage(n);
+    const content = await page.getTextContent();
+    runs.push(
+      content.items.flatMap((it) =>
+        'str' in it && it.str.trim() ? [{ str: it.str, size: Math.hypot(it.transform[2], it.transform[3]), x: it.transform[4], y: it.transform[5] }] : [],
+      ),
+    );
+    page.cleanup();
+  }
+  return detectArticles(runs);
+}
+
+/** Splits a magazine added before article finding existed (it was listed page by page). */
+export async function redetect(issue: Issue, onStep: (text: string) => void = () => {}): Promise<MagPage[] | null> {
+  if (!issue.file) return null;
+  const doc = await openDoc(issue.file);
+  const pages = (await fromOutline(doc)) || [];
+  return pages.length ? pages : findArticles(doc, onStep);
+}
 
 /** Articles from the PDF's bookmarks, when it has them. */
 async function fromOutline(doc: PDFDocumentProxy): Promise<MagPage[]> {

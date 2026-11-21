@@ -184,7 +184,7 @@ export function Home({ cloud }: { cloud: CloudStatus }) {
               <b>{fmt(climb.total)} m</b>
             </div>
           </div>
-          <p class="footnote">No levels and no tests. Every lesson you finish — a practice session or a magazine article — takes you 25 m up; answers and words add a little more on the way. Reach the top and the next mountain begins.</p>
+          <p class="footnote">No levels and no tests. Every practice session you finish takes you 25 m up, and every magazine page you read 10 m more; answers and words add a little on the way. Reach the top and the next mountain begins.</p>
           <div class="list">
             {CAMPS.map((c) => {
               const reached = climb.fraction >= c.at;

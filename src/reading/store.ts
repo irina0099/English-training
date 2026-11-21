@@ -15,6 +15,8 @@ export interface ReadingData {
   menu?: 'system' | 'app';
   /** Magazines added from PDF files (the files themselves are in IndexedDB). */
   issues?: Issue[];
+  /** Printed pages read in each PDF magazine: the climb goes up with every one. */
+  seen?: Record<string, number[]>;
 }
 
 const empty = (): ReadingData => ({ pages: {} });
@@ -72,8 +74,38 @@ export function setLast(issue: string, page: string) {
   save({ ...data, last: { issue, page } });
 }
 
+/**
+ * Pages read, for the climb: every printed page read in a PDF magazine, plus every
+ * finished article of the demo issue (each is one page).
+ */
 export function pagesRead(d: ReadingData = data): number {
-  return Object.values(d.pages).filter((p) => p.read).length;
+  const pdfIds = new Set((d.issues ?? []).map((i) => i.id));
+  const printed = Object.values(d.seen ?? {}).reduce((n, pgs) => n + pgs.length, 0);
+  const demo = Object.entries(d.pages).filter(([k, p]) => p.read && !pdfIds.has(k.split('/')[0])).length;
+  return printed + demo;
+}
+
+export function seenPages(issue: string, d: ReadingData = data): number[] {
+  return d.seen?.[issue] ?? [];
+}
+
+export function markPageRead(issue: string, pg: number) {
+  const cur = seenPages(issue);
+  if (cur.includes(pg)) return;
+  save({ ...data, seen: { ...data.seen, [issue]: [...cur, pg].sort((a, b) => a - b) } });
+}
+
+/** New contents for a magazine (its articles found again); pages already read stay read. */
+export function updateIssuePages(id: string, pages: Issue['pages']) {
+  const issue = (data.issues ?? []).find((i) => i.id === id);
+  if (!issue) return;
+  // Pages marked read under the old page-by-page contents count as read pages.
+  const old = Object.entries(data.pages).flatMap(([k, p]) => {
+    const m = k.match(/^(.+)\/p(\d+)$/);
+    return m && m[1] === id && p.read ? [Number(m[2])] : [];
+  });
+  const seen = [...new Set([...seenPages(id), ...old])].sort((a, b) => a - b);
+  save({ ...data, issues: (data.issues ?? []).map((i) => (i.id === id ? { ...i, pages } : i)), seen: { ...data.seen, [id]: seen } });
 }
 
 export function setMenuStyle(menu: 'system' | 'app') {

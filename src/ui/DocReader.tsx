@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DocView, packAt, UNITS, unpackAt } from '../reading/docview';
-import { getIssue, markRead, notesOf, setLast, subscribeReading, updateNotes } from '../reading/store';
+import { getIssue, markPageRead, markRead, notesOf, seenPages, setLast, subscribeReading, updateNotes } from '../reading/store';
 import { rangeFor, sentenceAround, wordAt } from '../reading/text';
 import type { Highlight, HighlightColor, PageNotes, Stroke, TextNote, Tool } from '../reading/types';
 import { speak } from '../tts';
@@ -145,9 +145,45 @@ export function DocReader({ issueId, pageId, focus, onClose }: { issueId: string
     const here = [...order].reverse().find((a) => (a.pdf?.from ?? 1) <= middle) ?? order[0];
     setArticle(here.id);
     setLast(issueId, here.id);
-    // Reaching the end of an article's last page counts as reading it.
-    if (userScrolled.current && dv.bottomOf(here.pdf?.to ?? 1) <= scroller.scrollTop + scroller.clientHeight + 4) markRead(issueId, here.id);
   };
+
+  // ——— Pages read (they move the climb up) ———
+  // A page counts as read after about 6 seconds well in view, once its bottom edge has
+  // been on screen: flicking past doesn't count, reading does.
+  const dwell = useRef(new Map<number, number>());
+  const sawBottom = useRef(new Set<number>());
+  useEffect(() => {
+    if (!ready) return;
+    const tick = window.setInterval(() => {
+      const dv = dvRef.current;
+      const sc = scrollerRef.current;
+      if (!dv || !sc || document.hidden || markup) return;
+      const top = sc.scrollTop;
+      const H = sc.clientHeight;
+      dv.slots.forEach((s, i) => {
+        const pg = i + 1;
+        const shown = Math.min(s.top + s.height, top + H) - Math.max(s.top, top);
+        if (shown <= 0) return;
+        if (s.top + s.height <= top + H + 4) sawBottom.current.add(pg);
+        // "Well in view": a third of the screen, or most of the page when zoomed out.
+        if (shown < Math.min(H * 0.33, s.height * 0.6)) return;
+        const t = (dwell.current.get(pg) ?? 0) + 1;
+        dwell.current.set(pg, t);
+        if (t >= 6 && sawBottom.current.has(pg) && userScrolled.current) {
+          markPageRead(issueId, pg);
+          // An article is read when all its pages are.
+          const art = order.find((a) => a.pdf && pg >= a.pdf.from && pg <= a.pdf.to);
+          if (art?.pdf) {
+            const seen = new Set([...seenPages(issueId), pg]);
+            let all = true;
+            for (let k = art.pdf.from; k <= art.pdf.to; k++) if (!seen.has(k)) all = false;
+            if (all) markRead(issueId, art.id);
+          }
+        }
+      });
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [ready, markup]);
 
   const go = (delta: number) => {
     const next = order[index + delta];

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { packAt } from '../reading/docview';
 import { annotatedPdf, shareFile } from '../reading/exportpdf';
-import { deleteFile, ImportError, importPdf } from '../reading/pdf';
-import { addIssue, allIssues, getIssue, getReading, notesOf, removeIssue, setMenuStyle, subscribeReading } from '../reading/store';
+import { deleteFile, ImportError, importPdf, redetect } from '../reading/pdf';
+import { addIssue, allIssues, seenPages, updateIssuePages, getIssue, getReading, notesOf, removeIssue, setMenuStyle, subscribeReading } from '../reading/store';
 import type { Issue, MagPage } from '../reading/types';
 import { ConfirmButton } from './common';
 import { useNav } from './context';
@@ -161,8 +161,28 @@ export function Library() {
 function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onToggle: () => void }) {
   const nav = useNav();
   const d = useData();
-  const read = iss.pages.filter((p) => notesOf(iss.id, p.id).read).length;
+  // A PDF magazine counts printed pages read (they move the climb); the demo counts articles.
+  const total = iss.file ? Math.max(...iss.pages.map((p) => p.pdf?.to ?? 1)) : iss.pages.length;
+  const read = iss.file ? seenPages(iss.id).length : iss.pages.filter((p) => notesOf(iss.id, p.id).read).length;
+  const unit = iss.file ? 'pages' : 'articles';
   const groups = byTopic(iss.pages);
+
+  // Magazines added while unknown issues were listed page by page get their articles found now.
+  const [finding, setFinding] = useState('');
+  const pageByPage = !!iss.file && iss.pages.length > 1 && iss.pages.every((p) => p.topic === 'Pages');
+  useEffect(() => {
+    if (!pageByPage) return;
+    let alive = true;
+    redetect(iss, (t) => alive && setFinding(t))
+      .then((pages) => {
+        if (alive && pages?.length) updateIssuePages(iss.id, pages);
+      })
+      .catch(() => {})
+      .finally(() => alive && setFinding(''));
+    return () => {
+      alive = false;
+    };
+  }, [pageByPage, iss.id]);
   return (
     <section class="section" aria-label={`${iss.magazine} ${iss.issue}`}>
       <div class="issue-card sheet">
@@ -185,13 +205,13 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
         )}
         <div class="issue-info">
           <b>{[iss.magazine, iss.issue].filter(Boolean).join(' ')}</b>
-          <span class="muted small">{iss.file ? `${iss.pages.length} articles` : 'Demo issue'}</span>
+          <span class="muted small">{finding || (iss.file ? `${iss.pages.length} articles · ${total} pages` : 'Demo issue')}</span>
           {iss.unsaved && <span class="error small">This phone didn’t let the app keep the file: it will be gone after you close the app.</span>}
-          <div class="bar" role="img" aria-label={`${read} of ${iss.pages.length} read`}>
-            <i class="known" style={{ width: `${(read / iss.pages.length) * 100}%` }} />
+          <div class="bar" role="img" aria-label={`${read} of ${total} ${unit} read`}>
+            <i class="known" style={{ width: `${(read / total) * 100}%` }} />
           </div>
           <span class="muted small">
-            {read} of {iss.pages.length} read
+            {read} of {total} {unit} read
           </span>
           <button type="button" class="link small" style={{ alignSelf: 'flex-start' }} aria-expanded={open} onClick={onToggle}>
             {open ? 'Hide contents' : 'Show contents'}
