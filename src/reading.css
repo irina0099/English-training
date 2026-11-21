@@ -1868,10 +1868,3 @@ body > .modal-backdrop {
   line-height: 1.4;
   color: var(--label-2);
 }
-
-/* Brings back the hidden demo issue, under the library's footnote. */
-.show-demo {
-  align-self: flex-start;
-  padding-inline: 16px;
-  font-size: 15px;
-}

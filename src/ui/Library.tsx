@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { packAt } from '../reading/docview';
 import { annotatedPdf, shareFile } from '../reading/exportpdf';
 import { deleteFile, ImportError, importPdf, loadThumb, redetect } from '../reading/pdf';
-import { addIssue, allIssues, articleAt, getIssue, getReading, notesOf, placeOf, resumeOf, seenPages, setDemoHidden, setMenuStyle, subscribeReading, updateIssuePages } from '../reading/store';
+import { addIssue, allIssues, articleAt, getIssue, getReading, notesOf, placeOf, resumeOf, seenPages, setMenuStyle, subscribeReading, updateIssuePages } from '../reading/store';
 import type { Issue, MagPage } from '../reading/types';
 import { useNav } from './context';
 import { useData } from './hooks';
@@ -160,11 +160,6 @@ export function Library() {
         {savedFromReading ? `${savedFromReading} words saved from reading are in Words → From reading. ` : ''}
         Magazines you add are kept only on this device. Known issues are split into sections and articles automatically; others are split by their bookmarks or page by page.
       </p>
-      {r.hideDemo && (
-        <button type="button" class="link small show-demo" onClick={() => setDemoHidden(false)}>
-          Show the demo issue again
-        </button>
-      )}
     </div>
   );
 }
@@ -275,12 +270,6 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
           </div>
         ))}
       {open && iss.file && <SaveCopy iss={iss} />}
-      {open && !iss.file && (
-        // The demo issue is part of the app: it can be hidden, and brought back at the bottom of Read.
-        <button type="button" class="btn btn-sm btn-ghost" onClick={() => setDemoHidden(true)}>
-          Hide the demo issue
-        </button>
-      )}
     </section>
   );
 }
