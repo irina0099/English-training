@@ -1,17 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PdfView } from '../src/reading/pdf';
+import { DocView } from '../src/reading/docview';
 
-const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
-
-/** Just enough of the DOM for PdfView to draw: canvases whose toBlob behaves as the test says. */
+/** Just enough of the DOM for DocView to draw: canvases whose toBlob behaves as the test says. */
 function fakeDom(toBlob: (cb: (b: Blob | null) => void) => void) {
   (globalThis as unknown as { document: unknown }).document = {
     createElement: () => ({ width: 0, height: 0, toBlob }),
   };
-}
-
-function fakeSlot() {
-  return { dataset: {} as Record<string, string>, querySelector: () => null, insertBefore() {} } as unknown as HTMLElement;
 }
 
 function fakePage(render: () => Promise<void>) {
@@ -31,43 +25,44 @@ function fakePage(render: () => Promise<void>) {
   return { page, renders: () => renders, cleaned: () => cleaned };
 }
 
+/** A DocView with one page on screen, without a real document behind it. */
 function viewWith(page: unknown) {
-  const view = new PdfView(fakeSlot(), 'k');
-  view.slots = [fakeSlot()];
-  (view as unknown as { pages: unknown[] }).pages = [page];
+  (globalThis as unknown as { window: unknown }).window = { devicePixelRatio: 1, removeEventListener() {} };
+  (globalThis as unknown as { cancelAnimationFrame: unknown }).cancelAnimationFrame = () => {};
+  const scroller = { scrollTop: 0, clientHeight: 800, removeEventListener() {} } as unknown as HTMLElement;
+  const view = new DocView(scroller, {} as HTMLElement, 'k', () => {}, () => {});
+  const el = { insertBefore() {} } as unknown as HTMLElement;
+  view.slots = [{ el, page: page as never, w: 600, h: 800, top: 0, height: 520, img: null, drawn: 0, text: null, textIndex: null, textPromise: null, overlay: el }];
   return view;
 }
+const drain = (view: DocView) => (view as unknown as { drain(): Promise<void> }).drain();
 
 afterEach(() => {
   delete (globalThis as unknown as { document?: unknown }).document;
+  delete (globalThis as unknown as { window?: unknown }).window;
   delete (globalThis as unknown as { indexedDB?: unknown }).indexedDB;
 });
 
-describe('PdfView', () => {
+describe('DocView', () => {
   it('stops trying a page that could not be turned into a picture', async () => {
     // Out of memory on iPhone: toBlob gives null. Async, so a runaway loop can't freeze the test.
     fakeDom((cb) => setTimeout(() => cb(null), 0));
-    const { page, renders, cleaned } = fakePage(async () => {});
-    const view = viewWith(page);
-    view.show([1], 1200);
-    await tick();
+    const { page, renders } = fakePage(async () => {});
+    await drain(viewWith(page));
     expect(renders()).toBe(1);
-    view.destroy();
-    expect(cleaned()).toBe(1);
   });
 
   it('survives a page that fails to render', async () => {
     fakeDom((cb) => setTimeout(() => cb(null), 0));
     const { page, renders } = fakePage(() => Promise.reject(new Error('broken page')));
-    const view = viewWith(page);
-    view.show([1], 1200);
-    await tick();
+    await expect(drain(viewWith(page))).resolves.toBeUndefined();
     expect(renders()).toBe(1);
-    // A new screen size is a fresh chance to draw it.
-    view.show([1], 800);
-    await tick();
-    expect(renders()).toBe(2);
-    view.destroy();
+  });
+
+  it('frees its pages when closed', () => {
+    const { page, cleaned } = fakePage(async () => {});
+    viewWith(page).destroy();
+    expect(cleaned()).toBe(1);
   });
 });
 

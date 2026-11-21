@@ -1,7 +1,7 @@
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import { detectArticles, type TextRun } from './detect';
 import { findMap } from './maps';
 import type { Issue, MagPage } from './types';
-import { PAGE_WIDTH } from './types';
 
 // Magazines added as PDF files. The file stays on this device (IndexedDB);
 // pages are drawn exactly as printed, with an invisible text layer on top so
@@ -133,18 +133,26 @@ async function closeDoc(key: string): Promise<void> {
   await p.then((d) => d.destroy()).catch(() => {});
 }
 
+/** The magazine's file as saved on this device. */
+export async function fileBytes(key: string): Promise<ArrayBuffer> {
+  const kept = inMemory.get(key);
+  if (kept) return kept.slice(0);
+  const stored = await tx<ArrayBuffer | Blob | undefined>('readonly', (s) => s.get(key));
+  if (!stored) throw new Error('missing');
+  return stored instanceof Blob ? stored.arrayBuffer() : stored;
+}
+
 export function openDoc(key: string): Promise<PDFDocumentProxy> {
   if (!docs.has(key)) {
     // One magazine open at a time: the one read before is closed (its file stays saved).
     for (const other of [...docs.keys()]) void closeDoc(other);
     const p = (async () => {
       const kept = inMemory.get(key);
-      const stored = kept ?? (await tx<ArrayBuffer | Blob | undefined>('readonly', (s) => s.get(key)));
-      if (!stored) throw new Error('missing');
-      const buf = stored instanceof Blob ? await stored.arrayBuffer() : stored;
+      const buf = kept ? kept.slice(0) : await fileBytes(key);
       const m = await pdfjs();
-      // pdf.js hands the bytes to its worker, so give it a copy and keep the original.
-      return m.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise;
+      // pdf.js hands the bytes over to its worker. Bytes read from storage are a fresh copy,
+      // so a large magazine isn't held in memory twice; a file kept in memory is copied.
+      return m.getDocument({ data: new Uint8Array(buf) }).promise;
     })();
     p.catch(() => {
       if (docs.get(key) === p) docs.delete(key);
@@ -167,6 +175,8 @@ export async function importPdf(file: File, onStep: (text: string) => void): Pro
   const buf = await step('read file', () => file.arrayBuffer());
   onStep('Saving it on this device…');
   let saved = true;
+  // Ask the phone to keep the app's data even when space runs low or the app isn't opened for a while.
+  await navigator.storage?.persist?.().catch(() => false);
   try {
     await tx('readwrite', (s) => s.put(buf, key));
   } catch {
@@ -200,15 +210,14 @@ async function readIssue(key: string, file: File, saved: boolean, onStep: (text:
     pages = map.articles.map((a, i) => ({ id: `a${i}`, topic: a.topic, title: a.title, dek: a.dek, html: '', pdf: { from: a.from, to: a.to } }));
   } else {
     pages = await fromOutline(doc);
-    if (!pages.length) {
-      pages = Array.from({ length: doc.numPages }, (_, i) => ({ id: `p${i + 1}`, topic: 'Pages', title: `Page ${i + 1}`, html: '', pdf: { from: i + 1, to: i + 1 } }));
-    }
+    if (!pages.length) pages = await findArticles(doc, onStep);
   }
 
   onStep('Drawing the cover…');
   const cover = await saveThumb(first, key, saved).catch(() => ({}));
   return {
-    id: key,
+    // The same magazine gets the same id when added again, so notes from a backup find it.
+    id: slug(map ? `${map.magazine} ${map.issue}` : `${name} ${doc.numPages}`),
     magazine: map?.magazine ?? name,
     issue: map?.issue ?? '',
     date: map?.date ?? '',
@@ -220,6 +229,37 @@ async function readIssue(key: string, file: File, saved: boolean, onStep: (text:
     addedAt: Date.now(),
     ...(saved ? {} : { unsaved: true }),
   };
+}
+
+const slug = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9а-яё]+/gi, '-')
+    .replace(/^-|-$/g, '') || 'magazine';
+
+/** Reads every page's text and finds where articles begin (see detect.ts). */
+async function findArticles(doc: PDFDocumentProxy, onStep: (text: string) => void): Promise<MagPage[]> {
+  const runs: TextRun[][] = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    if (n % 8 === 1) onStep(`Finding the articles… page ${n} of ${doc.numPages}`);
+    const page = await doc.getPage(n);
+    const content = await page.getTextContent();
+    runs.push(
+      content.items.flatMap((it) =>
+        'str' in it && it.str.trim() ? [{ str: it.str, size: Math.hypot(it.transform[2], it.transform[3]), x: it.transform[4], y: it.transform[5] }] : [],
+      ),
+    );
+    page.cleanup();
+  }
+  return detectArticles(runs);
+}
+
+/** Splits a magazine added before article finding existed (it was listed page by page). */
+export async function redetect(issue: Issue, onStep: (text: string) => void = () => {}): Promise<MagPage[] | null> {
+  if (!issue.file) return null;
+  const doc = await openDoc(issue.file);
+  const pages = (await fromOutline(doc)) || [];
+  return pages.length ? pages : findArticles(doc, onStep);
 }
 
 /** Articles from the PDF's bookmarks, when it has them. */
@@ -278,13 +318,10 @@ async function saveThumb(page: PDFPageProxy, key: string, fileSaved: boolean): P
 
 // ——— Drawing pages ———
 
-/** The page at the layout width (PAGE_WIDTH), the size every page is placed and its text laid at. */
-const fitViewport = (page: PDFPageProxy) => page.getViewport({ scale: PAGE_WIDTH / page.getViewport({ scale: 1 }).width });
-
 /** Safari's limit for one canvas is about 16.7 million pixels. */
 const MAX_PIXELS = 16_000_000;
 
-async function drawPage(page: PDFPageProxy, width: number): Promise<Blob | null> {
+export async function drawPage(page: PDFPageProxy, width: number): Promise<Blob | null> {
   const base = page.getViewport({ scale: 1 });
   const target = Math.min(width, Math.sqrt(MAX_PIXELS * (base.width / base.height)));
   const viewport = page.getViewport({ scale: target / base.width });
@@ -299,168 +336,24 @@ async function drawPage(page: PDFPageProxy, width: number): Promise<Blob | null>
 }
 
 /**
- * A whole magazine as one continuous column of pages, like Preview. Every page gets its
- * place and its text layer, but only the pages near the screen are drawn, so a long issue
- * fits in the phone's memory.
- */
-export class PdfView {
-  slots: HTMLElement[] = [];
-  private pages: PDFPageProxy[] = [];
-  private m: PdfJs | null = null;
-  private wanted: number[] = [];
-  private drawing = false;
-  /** Pages that couldn't be drawn (out of memory): tried again once they come back into view. */
-  private failed = new Set<number>();
-  private alive = true;
-  /** Picture width, in device pixels, when the page fills the screen width. */
-  private baseWidth = 1200;
-  private sharp: number | null = null;
-
-  constructor(
-    private root: HTMLElement,
-    private key: string,
-  ) {}
-
-  /** Places every page (sizes only); returns the number of pages. */
-  async layout(gap: number): Promise<number> {
-    this.m = await pdfjs();
-    const doc = await openDoc(this.key);
-    // All at once: one by one, a long issue waited for the worker hundreds of times in a row.
-    const pages = await Promise.all(Array.from({ length: doc.numPages }, (_, i) => doc.getPage(i + 1)));
-    if (!this.alive) return 0;
-    for (const [i, page] of pages.entries()) {
-      const n = i + 1;
-      const vp = fitViewport(page);
-      const slot = document.createElement('div');
-      slot.className = 'pdf-page';
-      slot.style.height = `${vp.height}px`;
-      if (n > 1) slot.style.marginTop = `${gap}px`;
-      slot.dataset.page = String(n);
-      this.root.appendChild(slot);
-      this.slots.push(slot);
-      this.pages.push(page);
-    }
-    return doc.numPages;
-  }
-
-  /** Builds the text layers, nearest pages first; `onDone` runs when every page has its text. */
-  async buildText(first: number, onDone: () => void) {
-    const order = this.slots.map((_, i) => i).sort((a, b) => Math.abs(a - (first - 1)) - Math.abs(b - (first - 1)));
-    for (const i of order) {
-      if (!this.alive) return;
-      const page = this.pages[i];
-      const vp = fitViewport(page);
-      const text = document.createElement('div');
-      text.className = 'pdf-text';
-      try {
-        await buildTextLayer(this.m!, page, vp, text);
-      } catch {
-        continue;
-      }
-      if (!this.alive) return;
-      this.slots[i].appendChild(text);
-      // Let the page breathe between pages: scrolling stays smooth while text is prepared.
-      await new Promise((r) => setTimeout(r, 0));
-    }
-    onDone();
-  }
-
-  /** Draws the given pages (numbers from 1, most important first) and forgets far-away ones. */
-  show(pages: number[], baseWidth: number) {
-    const width = Math.round(baseWidth);
-    if (width !== this.baseWidth) this.failed.clear();
-    this.baseWidth = width;
-    this.wanted = pages.filter((n) => n >= 1 && n <= this.slots.length);
-    const keep = new Set<number>();
-    for (const n of this.wanted) for (let k = n - 1; k <= n + 1; k++) keep.add(k);
-    this.slots.forEach((slot, i) => {
-      if (keep.has(i + 1)) return;
-      this.drop(slot);
-      this.failed.delete(i + 1);
-    });
-    void this.drain();
-  }
-
-  private drop(slot: HTMLElement) {
-    const img = slot.querySelector<HTMLImageElement>('.pdf-img');
-    if (!img) return;
-    URL.revokeObjectURL(img.src);
-    img.remove();
-    delete slot.dataset.width;
-    if (this.sharp === Number(slot.dataset.page)) this.sharp = null;
-  }
-
-  private async drain() {
-    if (this.drawing) return;
-    this.drawing = true;
-    try {
-      for (;;) {
-        const n = this.wanted.find((k) => !this.failed.has(k) && !this.slots[k - 1]?.querySelector('.pdf-img'));
-        if (!n || !this.alive) break;
-        // A page that didn't draw must not be drawn again and again: that would never end.
-        const ok = await this.paint(n, this.baseWidth).catch(() => false);
-        if (!ok) this.failed.add(n);
-      }
-    } finally {
-      this.drawing = false;
-    }
-  }
-
-  private async paint(n: number, width: number): Promise<boolean> {
-    const slot = this.slots[n - 1];
-    const blob = await drawPage(this.pages[n - 1], width);
-    if (!blob || !this.alive || !slot) return false;
-    let img = slot.querySelector<HTMLImageElement>('.pdf-img');
-    if (img) URL.revokeObjectURL(img.src);
-    else {
-      img = document.createElement('img');
-      img.className = 'pdf-img';
-      img.alt = '';
-      img.draggable = false;
-      slot.insertBefore(img, slot.firstChild);
-    }
-    img.src = URL.createObjectURL(blob);
-    slot.dataset.width = String(Math.round(width));
-    return true;
-  }
-
-  /**
-   * Redraws one page sharper for the current zoom, like Preview once you stop zooming;
-   * the page sharpened before goes back to normal, to save memory.
-   */
-  async sharpen(n: number, width: number) {
-    if (this.sharp && this.sharp !== n) {
-      const prev = this.sharp;
-      this.sharp = null;
-      if (Number(this.slots[prev - 1]?.dataset.width) > this.baseWidth * 1.15) await this.paint(prev, this.baseWidth).catch(() => false);
-    }
-    const slot = this.slots[n - 1];
-    if (!slot?.querySelector('.pdf-img')) return;
-    if (width <= Number(slot.dataset.width ?? 0) * 1.15) return;
-    // A sharper picture is a bonus: if it can't be drawn, the normal one stays.
-    if (await this.paint(n, width).catch(() => false)) this.sharp = n;
-  }
-
-  destroy() {
-    this.alive = false;
-    for (const slot of this.slots) this.drop(slot);
-    // Frees what pdf.js keeps for each page (its drawing instructions, its text).
-    for (const page of this.pages) page.cleanup();
-    this.pages = [];
-  }
-}
-
-/**
  * The invisible words over the page picture, placed by pdf.js's own text layer: it measures the
  * fonts it falls back to, so the selection sits on the printed words.
  */
 async function buildTextLayer(m: PdfJs, page: PDFPageProxy, viewport: ReturnType<PDFPageProxy['getViewport']>, el: HTMLElement) {
   const content = await page.getTextContent();
   el.classList.add('textLayer');
-  el.style.setProperty('--total-scale-factor', String(viewport.scale));
   const layer = new m.TextLayer({ textContentSource: content, container: el, viewport });
   await layer.render();
   // Line ends come out as <br>: give the page's text a space there, so the last word of
   // a line and the first word of the next don't run together.
   for (const br of el.querySelectorAll('br')) br.before(document.createTextNode(' '));
+}
+
+/** A text layer for one page, sized by the `--total-scale-factor` of the element it goes into. */
+export async function makeTextLayer(page: PDFPageProxy, scale: number): Promise<HTMLElement> {
+  const m = await pdfjs();
+  const el = document.createElement('div');
+  el.className = 'pdf-text';
+  await buildTextLayer(m, page, page.getViewport({ scale }), el);
+  return el;
 }

@@ -1,6 +1,8 @@
 import { useState } from 'preact/hooks';
 import type { CloudStatus } from '../engine/cloud';
 import { BackupError, exportJson, importJson, replaceData, resetProgress, updateSettings } from '../engine/store';
+import { shareFile } from '../reading/exportpdf';
+import { readingBackup, restoreReading } from '../reading/store';
 import { canSpeak, speak } from '../tts';
 import type { Level } from '../types';
 import { BackButton, ConfirmButton } from './common';
@@ -10,6 +12,12 @@ import { IconCheck } from './icons';
 
 const IS_ARTIFACT = import.meta.env.MODE === 'artifact';
 
+/** A checked backup: the progress and, in newer backups, the magazine notes. */
+interface Restore {
+  next: ReturnType<typeof importJson>;
+  reading: unknown;
+}
+
 export function Settings({ cloud }: { cloud: CloudStatus }) {
   const d = useData();
   const nav = useNav();
@@ -17,7 +25,7 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
   const [backup, setBackup] = useState('');
   const [message, setMessage] = useState('');
   /** A checked backup waiting for "Replace" while the progress is synced to the account. */
-  const [pending, setPending] = useState<ReturnType<typeof importJson> | null>(null);
+  const [pending, setPending] = useState<Restore | null>(null);
 
   const toggleLevel = (l: Level) => {
     const has = s.levels.includes(l);
@@ -25,8 +33,11 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
     if (levels.length) updateSettings({ levels });
   };
 
+  /** Progress plus magazine notes (highlights, drawings, text); the magazines' PDFs stay out, they are large. */
+  const backupText = () => JSON.stringify({ ...(JSON.parse(exportJson(d)) as object), reading: readingBackup() });
+
   const copy = async () => {
-    const text = exportJson(d);
+    const text = backupText();
     setBackup(text);
     try {
       await navigator.clipboard.writeText(text);
@@ -36,30 +47,30 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
     }
   };
 
-  const download = () => {
-    const blob = new Blob([exportJson(d)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `english-notebook-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  const download = async () => {
+    const blob = new Blob([backupText()], { type: 'application/json' });
+    // On iPhone this opens the share sheet: "Save to Files" → iCloud Drive.
+    const how = await shareFile(blob, `english-notebook-${new Date().toISOString().slice(0, 10)}.json`);
+    if (how !== 'cancelled') setMessage('Backup saved. It includes your magazine notes, but not the magazines themselves: keep their PDFs too.');
   };
 
-  const apply = (next: ReturnType<typeof importJson>) => {
+  const apply = ({ next, reading }: Restore) => {
     replaceData(next, true);
+    restoreReading(reading);
     setPending(null);
-    setMessage('Progress restored from the backup.');
+    setMessage(reading ? 'Progress and magazine notes restored. If a magazine is missing its file, add its PDF again in Read: its notes will be there.' : 'Progress restored from the backup.');
     setBackup('');
   };
 
   const restore = (text: string) => {
     try {
       const next = importJson(text);
+      const parsed = JSON.parse(text) as { reading?: unknown };
       // Synced progress is replaced on every device: ask first.
       if (cloud === 'synced') {
-        setPending(next);
+        setPending({ next, reading: parsed.reading });
         setMessage('');
-      } else apply(next);
+      } else apply({ next, reading: parsed.reading });
     } catch (e) {
       setMessage(e instanceof BackupError ? e.message : 'Couldn’t read the backup. Check that you copied all of the text.');
     }
@@ -152,7 +163,7 @@ export function Settings({ cloud }: { cloud: CloudStatus }) {
           {!IS_ARTIFACT && (
             <button type="button" class="list-item" onClick={download}>
               <span class="list-item-main">
-                <b style={{ color: 'var(--blue)' }}>Download as a file</b>
+                <b style={{ color: 'var(--blue)' }}>Save to Files (iCloud Drive)</b>
               </span>
             </button>
           )}

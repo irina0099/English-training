@@ -26,7 +26,7 @@ export const CAMPS: { at: number; name: string }[] = [
 ];
 
 /** Lessons are the big steps; everything else adds a little on the way. */
-export const METERS = { lesson: 25, page: 25, answer: 1, learning: 1, known: 3, readingWord: 2 } as const;
+export const METERS = { lesson: 25, page: 10, answer: 1, learning: 1, known: 3, readingWord: 2 } as const;
 
 export interface ClimbPart {
   label: string;
@@ -65,7 +65,7 @@ export function climbOf(d: AppData, pagesRead: number): Climb {
   const readingWords = d.custom.filter((w) => w.ctx?.length).length;
   const parts: ClimbPart[] = [
     { label: 'lessons finished', count: lessons, per: METERS.lesson },
-    { label: 'magazine articles read', count: pagesRead, per: METERS.page },
+    { label: 'magazine pages read', count: pagesRead, per: METERS.page },
     { label: 'correct answers', count: answers, per: METERS.answer },
     { label: 'words you are learning', count: learning, per: METERS.learning },
     { label: 'words you know well', count: known, per: METERS.known },

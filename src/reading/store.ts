@@ -16,6 +16,8 @@ export interface ReadingData {
   menu?: 'system' | 'app';
   /** Magazines added from PDF files (the files themselves are in IndexedDB). */
   issues?: Issue[];
+  /** Printed pages read in each PDF magazine: the climb goes up with every one. */
+  seen?: Record<string, number[]>;
 }
 
 const empty = (): ReadingData => ({ pages: {} });
@@ -70,8 +72,38 @@ export function setLast(issue: string, page: string) {
   save({ ...data, last: { issue, page } });
 }
 
+/**
+ * Pages read, for the climb: every printed page read in a PDF magazine, plus every
+ * finished article of the demo issue (each is one page).
+ */
 export function pagesRead(d: ReadingData = data): number {
-  return Object.values(d.pages).filter((p) => p.read).length;
+  const pdfIds = new Set((d.issues ?? []).map((i) => i.id));
+  const printed = Object.values(d.seen ?? {}).reduce((n, pgs) => n + pgs.length, 0);
+  const demo = Object.entries(d.pages).filter(([k, p]) => p.read && !pdfIds.has(k.split('/')[0])).length;
+  return printed + demo;
+}
+
+export function seenPages(issue: string, d: ReadingData = data): number[] {
+  return d.seen?.[issue] ?? [];
+}
+
+export function markPageRead(issue: string, pg: number) {
+  const cur = seenPages(issue);
+  if (cur.includes(pg)) return;
+  save({ ...data, seen: { ...data.seen, [issue]: [...cur, pg].sort((a, b) => a - b) } });
+}
+
+/** New contents for a magazine (its articles found again); pages already read stay read. */
+export function updateIssuePages(id: string, pages: Issue['pages']) {
+  const issue = (data.issues ?? []).find((i) => i.id === id);
+  if (!issue) return;
+  // Pages marked read under the old page-by-page contents count as read pages.
+  const old = Object.entries(data.pages).flatMap(([k, p]) => {
+    const m = k.match(/^(.+)\/p(\d+)$/);
+    return m && m[1] === id && p.read ? [Number(m[2])] : [];
+  });
+  const seen = [...new Set([...seenPages(id), ...old])].sort((a, b) => a - b);
+  save({ ...data, issues: (data.issues ?? []).map((i) => (i.id === id ? { ...i, pages } : i)), seen: { ...data.seen, [id]: seen } });
 }
 
 export function setMenuStyle(menu: 'system' | 'app') {
@@ -87,8 +119,27 @@ export function getIssue(id: string): Issue | undefined {
   return (data.issues ?? []).find((i) => i.id === id) ?? ISSUES.find((i) => i.id === id);
 }
 
-export function addIssue(issue: Issue) {
-  save({ ...data, issues: [...(data.issues ?? []), issue], last: { issue: issue.id, page: issue.pages[0].id } });
+/** Adds a magazine, or puts a fresh file under one added before (its notes stay). Returns the replaced file key. */
+export function addIssue(issue: Issue): string | undefined {
+  const old = (data.issues ?? []).find((i) => i.id === issue.id);
+  const issues = [...(data.issues ?? []).filter((i) => i.id !== issue.id), issue];
+  save({ ...data, issues, last: { issue: issue.id, page: issue.pages[0].id } });
+  return old?.file && old.file !== issue.file ? old.file : undefined;
+}
+
+/** Magazine notes for the backup file: highlights, Markup and text notes, and which magazines they belong to. */
+export function readingBackup(): ReadingData {
+  return { pages: data.pages, issues: data.issues, menu: data.menu };
+}
+
+/** Brings notes back from a backup. Magazines whose PDF isn't on this device yet show up; adding the PDF again opens them with their notes. */
+export function restoreReading(r: unknown) {
+  if (!r || typeof r !== 'object') return;
+  const b = r as ReadingData;
+  const pages = { ...data.pages, ...(typeof b.pages === 'object' ? b.pages : {}) };
+  const mine = data.issues ?? [];
+  const incoming = Array.isArray(b.issues) ? b.issues.filter((i) => i && typeof i.id === 'string' && !mine.some((m) => m.id === i.id)) : [];
+  save({ ...data, pages, issues: [...mine, ...incoming], menu: b.menu ?? data.menu });
 }
 
 export function removeIssue(id: string) {

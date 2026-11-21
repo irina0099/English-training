@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { deleteFile, ImportError, importPdf, loadThumb } from '../reading/pdf';
-import { addIssue, allIssues, getIssue, getReading, notesOf, removeIssue, setMenuStyle, subscribeReading } from '../reading/store';
+import { packAt } from '../reading/docview';
+import { annotatedPdf, shareFile } from '../reading/exportpdf';
+import { deleteFile, ImportError, importPdf, loadThumb, redetect } from '../reading/pdf';
+import { addIssue, allIssues, seenPages, updateIssuePages, getIssue, getReading, notesOf, removeIssue, setMenuStyle, subscribeReading } from '../reading/store';
 import type { Issue, MagPage } from '../reading/types';
 import { ConfirmButton } from './common';
 import { useNav } from './context';
@@ -56,7 +58,7 @@ export function Library() {
     .flatMap((iss) => [
       ...iss.pages.flatMap((p) => notesOf(iss.id, p.id).hl.map((h) => ({ h, iss, p }))),
       // A PDF magazine keeps its highlights for the whole issue; find the article by page.
-      ...notesOf(iss.id, 'doc').hl.map((h) => ({ h, iss, p: articleAt(iss, h.pg ?? 1) })),
+      ...notesOf(iss.id, 'pages').hl.map((h) => ({ h, iss, p: articleAt(iss, h.pg ?? 1) })),
     ])
     .sort((a, b) => b.h.at - a.h.at);
   const savedFromReading = d.custom.filter((w) => w.ctx?.length).length;
@@ -72,7 +74,8 @@ export function Library() {
     setError('');
     try {
       const issue = await importPdf(file, setStep);
-      addIssue(issue);
+      const replaced = addIssue(issue);
+      if (replaced) deleteFile(replaced).catch(() => {});
       setOpen(issue.id);
     } catch (e) {
       const why = e instanceof ImportError ? e.message : e instanceof Error ? `${e.name} ${e.message}` : String(e);
@@ -135,7 +138,7 @@ export function Library() {
           <p class="section-title">Your highlights</p>
           <div class="list">
             {highlights.slice(0, 12).map(({ h, iss, p }) => (
-              <button type="button" class="list-item" key={h.id} onClick={() => nav.openReader(iss.id, p.id, h.start)}>
+              <button type="button" class="list-item" key={h.id} onClick={() => nav.openReader(iss.id, p.id, iss.file && h.pg ? packAt(h.pg, h.start) : h.start)}>
                 <i class={`hl-dot hl-${h.color}`} aria-hidden="true" />
                 <span class="list-item-main">
                   <b class="quote">“{h.text}”</b>
@@ -178,9 +181,29 @@ export function Library() {
 function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onToggle: () => void }) {
   const nav = useNav();
   const d = useData();
-  const read = iss.pages.filter((p) => notesOf(iss.id, p.id).read).length;
+  // A PDF magazine counts printed pages read (they move the climb); the demo counts articles.
+  const total = iss.file ? Math.max(...iss.pages.map((p) => p.pdf?.to ?? 1)) : iss.pages.length;
+  const read = iss.file ? seenPages(iss.id).length : iss.pages.filter((p) => notesOf(iss.id, p.id).read).length;
+  const unit = iss.file ? 'pages' : 'articles';
   const groups = byTopic(iss.pages);
   const thumb = useThumb(iss);
+
+  // Magazines added while unknown issues were listed page by page get their articles found now.
+  const [finding, setFinding] = useState('');
+  const pageByPage = !!iss.file && iss.pages.length > 1 && iss.pages.every((p) => p.topic === 'Pages');
+  useEffect(() => {
+    if (!pageByPage) return;
+    let alive = true;
+    redetect(iss, (t) => alive && setFinding(t))
+      .then((pages) => {
+        if (alive && pages?.length) updateIssuePages(iss.id, pages);
+      })
+      .catch(() => {})
+      .finally(() => alive && setFinding(''));
+    return () => {
+      alive = false;
+    };
+  }, [pageByPage, iss.id]);
   return (
     <section class="section" aria-label={`${iss.magazine} ${iss.issue}`}>
       <div class="issue-card sheet">
@@ -203,13 +226,13 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
         )}
         <div class="issue-info">
           <b>{[iss.magazine, iss.issue].filter(Boolean).join(' ')}</b>
-          <span class="muted small">{iss.file ? `${iss.pages.length} articles` : 'Demo issue'}</span>
+          <span class="muted small">{finding || (iss.file ? `${iss.pages.length} articles · ${total} pages` : 'Demo issue')}</span>
           {iss.unsaved && <span class="error small">This phone didn’t let the app keep the file: it will be gone after you close the app.</span>}
-          <div class="bar" role="img" aria-label={`${read} of ${iss.pages.length} read`}>
-            <i class="known" style={{ width: `${(read / iss.pages.length) * 100}%` }} />
+          <div class="bar" role="img" aria-label={`${read} of ${total} ${unit} read`}>
+            <i class="known" style={{ width: `${(read / total) * 100}%` }} />
           </div>
           <span class="muted small">
-            {read} of {iss.pages.length} read
+            {read} of {total} {unit} read
           </span>
           <button type="button" class="link small" style={{ alignSelf: 'flex-start' }} aria-expanded={open} onClick={onToggle}>
             {open ? 'Hide contents' : 'Show contents'}
@@ -240,6 +263,7 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
             </div>
           </div>
         ))}
+      {open && iss.file && <SaveCopy iss={iss} />}
       {open && iss.file && (
         <ConfirmButton
           class="btn btn-sm btn-ghost"
@@ -252,5 +276,57 @@ function IssueBlock({ iss, open, onToggle }: { iss: Issue; open: boolean; onTogg
         />
       )}
     </section>
+  );
+}
+
+/**
+ * "Save a copy with notes": the PDF with highlights, drawings and text notes on its pages,
+ * for iCloud Drive via the share sheet. Two taps, because iPhone opens the share sheet only
+ * straight after a tap, and preparing a large magazine takes a few seconds.
+ */
+export function SaveCopy({ iss }: { iss: Issue }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'ready' | 'done' | 'error'>('idle');
+  const [blob, setBlob] = useState<Blob | null>(null);
+  const name = `${[iss.magazine, iss.issue].filter(Boolean).join(' ')} — with notes.pdf`;
+  const notes = notesOf(iss.id, 'pages');
+  const count = notes.hl.length + notes.strokes.length + notes.texts.length;
+
+  const prepare = async () => {
+    setState('busy');
+    try {
+      setBlob(await annotatedPdf(iss, notes));
+      setState('ready');
+    } catch {
+      setState('error');
+    }
+  };
+  const save = async () => {
+    if (!blob) return;
+    const how = await shareFile(blob, name);
+    if (how !== 'cancelled') {
+      setState('done');
+      setBlob(null);
+    }
+  };
+
+  return (
+    <div class="sheet stack-sm save-copy">
+      <b>A copy with your notes</b>
+      <span class="muted small">
+        {count
+          ? `The magazine as a PDF with your ${count} highlights, drawings and notes on its pages. Save it to Files → iCloud Drive; it opens in Preview and Books on any device.`
+          : 'Add highlights, drawings or text notes while reading, then save the magazine with them as a PDF to iCloud Drive.'}
+      </span>
+      {state === 'ready' ? (
+        <button type="button" class="btn btn-primary" onClick={save}>
+          Save to Files…
+        </button>
+      ) : (
+        <button type="button" class="btn" disabled={state === 'busy' || !count} onClick={prepare}>
+          {state === 'busy' ? 'Preparing the copy…' : state === 'done' ? 'Saved ✓ Prepare again' : 'Prepare a copy with notes'}
+        </button>
+      )}
+      {state === 'error' && <p class="error small">Couldn’t make the copy. Try again; if the magazine is very large, close other apps first.</p>}
+    </div>
   );
 }

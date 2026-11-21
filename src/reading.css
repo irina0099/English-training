@@ -1479,3 +1479,304 @@ body > .modal-backdrop {
 .pull-hint.ready b {
   color: #fff;
 }
+
+/* ——— PDF magazines: one column of pages with the browser's own scrolling ——— */
+
+.doc-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* Pinch is ours (it changes the page width); panning is the browser's. */
+  touch-action: pan-x pan-y;
+  background: var(--reader-bg);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.doc-scroll.is-markup {
+  touch-action: none;
+}
+
+.doc-col {
+  position: relative;
+  padding: 0;
+  will-change: auto;
+}
+
+.doc-col .pdf-page {
+  position: relative;
+  margin-bottom: 8px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 1px 6px rgba(0, 0, 0, 0.1);
+}
+
+.doc-col .pdf-text {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+  z-index: 1;
+}
+
+.is-markup .doc-col .pdf-text {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pg-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.pg-overlay i {
+  position: absolute;
+  display: block;
+}
+
+.pg-overlay .ink-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.pg-overlay .text-note {
+  pointer-events: auto;
+}
+
+.doc-zoom {
+  position: absolute;
+  right: 12px;
+  bottom: 60px;
+}
+
+/* ——— Reading a PDF magazine like Preview: full screen, floating glass controls ——— */
+
+/* The tab bar and the top inset step aside while a magazine is open. */
+.shell.reading {
+  padding-top: 0;
+}
+
+.shell.reading .tabbar {
+  display: none;
+}
+
+.doc-reader {
+  background: var(--reader-bg);
+}
+
+.doc-reader .doc-scroll {
+  /* Pages begin under the floating header and end above the floating toolbar;
+     while scrolling they pass behind both. */
+  padding-top: calc(env(safe-area-inset-top, 0px) + 66px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+}
+
+.chrome-hidden .doc-scroll {
+  scrollbar-width: none;
+}
+
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.62);
+  --glass-line: rgba(255, 255, 255, 0.7);
+  --glass-shadow: 0 6px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --glass-ink: #1c1c1e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --glass-bg: rgba(44, 44, 46, 0.6);
+    --glass-line: rgba(255, 255, 255, 0.14);
+    --glass-ink: #ffffff;
+  }
+}
+
+:root[data-theme='dark'] {
+  --glass-bg: rgba(44, 44, 46, 0.6);
+  --glass-line: rgba(255, 255, 255, 0.14);
+  --glass-ink: #ffffff;
+}
+
+.glass {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  border: 0.5px solid var(--glass-line);
+  box-shadow: var(--glass-shadow);
+  color: var(--glass-ink);
+}
+
+.glass-top,
+.glass-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-inline: 12px;
+  pointer-events: none;
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+}
+
+.glass-top > *,
+.glass-bottom > * {
+  pointer-events: auto;
+}
+
+.glass-top {
+  top: calc(env(safe-area-inset-top, 0px) + 6px);
+}
+
+.glass-bottom {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  justify-content: center;
+}
+
+.chrome-hidden .glass-top {
+  opacity: 0;
+  transform: translateY(-12px);
+}
+
+.chrome-hidden .glass-bottom {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.chrome-hidden .glass-top > *,
+.chrome-hidden .glass-bottom > * {
+  pointer-events: none;
+}
+
+.glass-round {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.glass-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 48px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 16px;
+}
+
+.glass-title b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.glass-spacer {
+  flex: none;
+  width: 48px;
+}
+
+.glass-pill-btn {
+  flex: none;
+  height: 48px;
+  border-radius: 24px;
+  padding: 0 18px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--blue);
+}
+
+.glass-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 58px;
+  padding: 0 10px;
+  border-radius: 29px;
+  max-width: 100%;
+}
+
+.glass-icon {
+  width: 50px;
+  height: 50px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--glass-ink);
+  display: grid;
+  place-items: center;
+}
+
+.glass-icon:disabled {
+  opacity: 0.3;
+}
+
+.glass-icon:active,
+.glass-round:active {
+  background: rgba(127, 127, 127, 0.18);
+}
+
+.sel-glass {
+  gap: 0;
+  padding: 0 8px;
+}
+
+.sel-glass .bar-btn {
+  font-size: 14px;
+  padding: 10px 6px;
+}
+
+.markup-glass {
+  width: 100%;
+  max-width: 560px;
+  border-radius: 26px;
+  padding: 8px 0 4px;
+}
+
+.doc-reader .doc-zoom {
+  position: absolute;
+  right: 12px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+  z-index: 6;
+  height: 40px;
+  font-size: 14px;
+}
+
+.page-row[aria-current='true'] b {
+  color: var(--blue);
+}
+
+.bar-btn.remove {
+  color: var(--red);
+}
+
+.bar-hl.on-green {
+  background: #34c759;
+}
+.bar-hl.on-blue {
+  background: #5ac8fa;
+}
+.bar-hl.on-pink {
+  background: #ff6482;
+}
+.bar-hl.on-underline {
+  background: linear-gradient(transparent 60%, #ff3b30 60%) #fff;
+}

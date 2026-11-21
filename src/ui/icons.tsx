@@ -162,3 +162,27 @@ export const IconNews = (p: Props) => (
     <path d="M17 9h2v10a2 2 0 0 1-2 2M8 8h6M8 12h6M8 16h4" />
   </Svg>
 );
+
+export const IconMore = (p: Props) => (
+  <Svg {...p}>
+    <circle cx="6" cy="12" r="1.3" fill="currentColor" />
+    <circle cx="12" cy="12" r="1.3" fill="currentColor" />
+    <circle cx="18" cy="12" r="1.3" fill="currentColor" />
+  </Svg>
+);
+
+export const IconList = (p: Props) => (
+  <Svg {...p}>
+    <path d="M9 6h11M9 12h11M9 18h11" />
+    <circle cx="4.5" cy="6" r="1" fill="currentColor" />
+    <circle cx="4.5" cy="12" r="1" fill="currentColor" />
+    <circle cx="4.5" cy="18" r="1" fill="currentColor" />
+  </Svg>
+);
+
+export const IconShare = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" />
+    <path d="M7 11H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1" />
+  </Svg>
+);
