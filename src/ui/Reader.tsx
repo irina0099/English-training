@@ -16,6 +16,8 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const MAX_ZOOM = 6;
 const PAD = 12;
 const LONG_PRESS = 420;
+/** How far to pull past the end of an article to open the next one. */
+const PULL = 90;
 
 interface View {
   s: number;
@@ -61,6 +63,11 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
   const [fit, setFit] = useState(1);
   const [layoutTick, setLayoutTick] = useState(0);
   const [loadError, setLoadError] = useState(false);
+  /** How far the page is pulled past its end (−) or start (+), to move to the next or previous article. */
+  const [pull, setPull] = useState(0);
+  const landEnd = useRef(false);
+  /** The learner has scrolled or zoomed this article herself (landing on its end doesn't count as reading it). */
+  const scrolledHere = useRef(false);
 
   const [sel, setSel] = useState<Selection | null>(null);
   const [menu, setMenu] = useState<'main' | 'colors'>('main');
@@ -87,6 +94,15 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
     const el = contentRef.current;
     if (!el) return;
     let alive = true;
+    // Coming back from the next article: open this one at its end.
+    const land = () => {
+      const h = el.offsetHeight;
+      const vp = viewportRef.current;
+      if (!landEnd.current || h < 50 || !vp) return;
+      landEnd.current = false;
+      const v = fitView();
+      setView({ ...v, y: Math.min(PAD, vp.clientHeight - h * v.s - PAD - 64) });
+    };
     const measure = () => {
       if (!alive) return;
       const h = el.offsetHeight;
@@ -101,12 +117,17 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       layoutPdf(el, issue.file, mp.pdf.from, mp.pdf.to, () => alive, () => {
         idxRef.current = indexText(el);
         measure();
+        land();
       }).catch(() => alive && setLoadError(true));
     }
     measure();
     const v = fitView();
     setFit(v.s);
     setView(v);
+    if (!mp.pdf) land();
+    scrolledHere.current = false;
+    g.over = 0;
+    setPull(0);
     setSel(null);
     setMarkup(false);
     history.current = { undo: [], redo: [] };
@@ -168,7 +189,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
     if (!vp || notes.read || !idxRef.current?.text.trim()) return;
     // Only once the learner has scrolled to the end, or the whole article fits and she looked at it.
     const atEnd = view.y + height * view.s <= vp.clientHeight + 40;
-    if (atEnd && (g.moved || g.pointers.size === 0) && layoutTick > 1 && g.startT > 0) markRead(issueId, mp.id);
+    if (atEnd && scrolledHere.current && layoutTick > 1) markRead(issueId, mp.id);
   }, [view, height]);
 
   // ——— Annotations ———
@@ -294,6 +315,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
     lastTap: 0,
     textId: '',
     textOffset: { x: 0, y: 0 },
+    over: 0,
   }).current;
 
   const toPage = (cx: number, cy: number) => {
@@ -375,6 +397,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       if (g.mode === 'draw') setDraft(null);
       const [a, b] = [...g.pointers.values()];
       g.mode = 'pinch';
+      scrolledHere.current = true;
       g.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, view: viewRef.current };
       return;
     }
@@ -468,7 +491,24 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       const dt = Math.max(1, now - g.vel.t);
       g.vel = { x: 0.8 * (dx / dt) + 0.2 * g.vel.x, y: 0.8 * (dy / dt) + 0.2 * g.vel.y, t: now };
       const v = viewRef.current;
-      setView(clamp({ ...v, x: v.x + dx, y: v.y + dy }));
+      scrolledHere.current = true;
+      if (g.over === 0) {
+        const c = clamp({ ...v, x: v.x + dx, y: v.y + dy });
+        setView(c);
+        // Scrolling on past the end (or the start) of the article pulls towards the next one.
+        const rest = v.y + dy - c.y;
+        if (Math.abs(rest) > 0.5) g.over = rest;
+      } else {
+        const over = g.over + dy;
+        if (Math.sign(over) !== Math.sign(g.over)) {
+          g.over = 0;
+          setView(clamp({ ...v, x: v.x + dx, y: v.y + over }));
+        } else {
+          g.over = over;
+          setView(clamp({ ...v, x: v.x + dx }));
+        }
+      }
+      setPull(g.over);
     }
   };
 
@@ -512,7 +552,15 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
       return;
     }
     if (mode === 'pan' && g.moved) {
-      if (performance.now() - g.vel.t < 80) momentum();
+      const over = g.over;
+      g.over = 0;
+      setPull(0);
+      if (over <= -PULL && issue.pages[index + 1]) return go(1);
+      if (over >= PULL && issue.pages[index - 1]) {
+        landEnd.current = true;
+        return go(-1);
+      }
+      if (performance.now() - g.vel.t < 80 && !over) momentum();
       return;
     }
     // A tap.
@@ -562,6 +610,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     stopMomentum();
+    scrolledHere.current = true;
     const v = viewRef.current;
     if (e.ctrlKey || e.metaKey) {
       zoomAt(e.clientX, e.clientY, Math.max(fit, Math.min(MAX_ZOOM, v.s * Math.exp(-e.deltaY / 120))), false);
@@ -652,7 +701,7 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
             <p>This magazine’s file isn’t on this device any more. Add the PDF again in Read.</p>
           </div>
         )}
-        <div class="paper" ref={paperRef} style={{ width: `${PAGE_WIDTH}px`, transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})` }}>
+        <div class="paper" ref={paperRef} style={{ width: `${PAGE_WIDTH}px`, transform: `translate(${view.x}px, ${view.y + Math.sign(pull) * Math.min(110, Math.abs(pull) * 0.45)}px) scale(${view.s})` }}>
           <div class={`mag ${issue.theme}`} ref={contentRef} lang="en" />
           <div class="paper-layer" aria-hidden="true">
             {hlBoxes.map(({ h, boxes }) =>
@@ -713,6 +762,12 @@ export function Reader({ issueId, pageId, focus, onClose }: { issueId: string; p
           </div>
         )}
 
+        {Math.abs(pull) > 12 && (pull < 0 ? issue.pages[index + 1] : issue.pages[index - 1]) && (
+          <div class={`pull-hint ${pull < 0 ? 'at-bottom' : 'at-top'} ${Math.abs(pull) >= PULL ? 'ready' : ''}`} aria-live="polite">
+            <span>{pull < 0 ? (Math.abs(pull) >= PULL ? 'Release for next' : 'Keep scrolling for next') : Math.abs(pull) >= PULL ? 'Release for previous' : 'Pull for previous'}</span>
+            <b>{(pull < 0 ? issue.pages[index + 1] : issue.pages[index - 1]).title}</b>
+          </div>
+        )}
         {!markup && zoomPct > 104 && (
           <button type="button" class="zoom-pill" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, fit)}>
             {zoomPct}% · Fit

@@ -1394,3 +1394,52 @@ body > .modal-backdrop {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.pull-hint {
+  position: absolute;
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 8px 16px;
+  border-radius: 14px;
+  background: var(--bar-bg);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  font-size: 13px;
+  color: var(--label-2);
+  text-align: center;
+  pointer-events: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.pull-hint b {
+  font-size: 15px;
+  color: var(--label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.pull-hint.at-bottom {
+  bottom: 14px;
+}
+
+.pull-hint.at-top {
+  top: 14px;
+}
+
+.pull-hint.ready {
+  background: var(--blue);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.pull-hint.ready b {
+  color: #fff;
+}
