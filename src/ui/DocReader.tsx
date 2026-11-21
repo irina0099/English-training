@@ -23,7 +23,15 @@ interface PageSel {
   rects: [number, number, number, number][];
 }
 
-type Sheet = { kind: 'lookup' | 'translate' | 'add'; text: string; sentence: string; at: number } | { kind: 'text'; note: TextNote } | null;
+/** `sel` is the words the sheet was opened for: a word saved to Words gets a highlight there. */
+type Sheet = { kind: 'lookup' | 'translate' | 'add'; text: string; sentence: string; at: number; sel: PageSel } | { kind: 'text'; note: TextNote } | null;
+
+/** A search match: the page and the characters in its text. */
+interface Hit {
+  pg: number;
+  start: number;
+  end: number;
+}
 
 export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: string; pageId: string; focus?: number; at?: Place; onClose: () => void }) {
   const issue = getIssue(issueId)!;
@@ -65,7 +73,8 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
     const dv = dvRef.current;
     const slot = dv?.slots[pg - 1];
     const n = notesRef.current;
-    overlay.textContent = '';
+    // Redrawn from the notes; the search match and a jump's flash stay.
+    for (const c of [...overlay.children]) if (!c.matches('.find-hit, .flash')) c.remove();
     for (const h of n.hl)
       if (h.pg === pg)
         for (const [x, y, w, hh] of h.rects ?? []) {
@@ -292,21 +301,33 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
 
   const stackOf = (h: Highlight) => notes.hl.filter((x) => x.pg === h.pg && x.end > h.start && x.start < h.end);
 
+  /** One highlight over some words and anything it overlaps, in the given colour. */
+  const highlightWords = (s: PageSel, color: HighlightColor) => {
+    const idx = dvRef.current?.indexOf(s.pg);
+    if (!idx) return;
+    const cur = notesOf(issueId, UNIT);
+    const over = cur.hl.filter((h) => h.pg === s.pg && h.end > s.start && h.start < s.end);
+    const start = Math.min(s.start, ...over.map((h) => h.start));
+    const end = Math.max(s.end, ...over.map((h) => h.end));
+    const range = rangeFor(idx, start, end);
+    const rects = range && dvRef.current ? dvRef.current.rectsOf(s.pg, range) : s.rects;
+    const kept = cur.hl.filter((h) => !over.includes(h));
+    saveNotes({ hl: [...kept, { id: uid(), pg: s.pg, start, end, rects, color, text: idx.text.slice(start, end).trim(), at: Date.now() }] });
+  };
+
   const addHighlight = (color: HighlightColor) => {
     if (hlSel) {
       // Highlights stacked on the same words (from before) become one, in the new colour.
       const stack = stackOf(hlSel);
       saveNotes({ hl: [...notes.hl.filter((h) => !stack.includes(h)), { ...hlSel, color }] });
-    } else if (sel && selIdx) {
-      // One highlight over the selection and anything it overlaps, in the new colour.
-      const start = Math.min(sel.start, ...touched.map((h) => h.start));
-      const end = Math.max(sel.end, ...touched.map((h) => h.end));
-      const range = rangeFor(selIdx, start, end);
-      const rects = range && dvRef.current ? dvRef.current.rectsOf(sel.pg, range) : sel.rects;
-      const kept = notes.hl.filter((h) => !touched.includes(h));
-      saveNotes({ hl: [...kept, { id: uid(), pg: sel.pg, start, end, rects, color, text: selIdx.text.slice(start, end).trim(), at: Date.now() }] });
-    }
+    } else if (sel) highlightWords(sel, color);
     clearSel();
+  };
+
+  /** A word saved to Words is highlighted in yellow where it was met, unless it's highlighted already. */
+  const markSaved = (s: PageSel) => {
+    const covered = notesOf(issueId, UNIT).hl.some((h) => h.pg === s.pg && h.start <= s.start && h.end >= s.end);
+    if (!covered) highlightWords(s, 'yellow');
   };
 
   const removeHighlight = () => {
@@ -318,7 +339,7 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
 
   const openSheet = (kind: 'lookup' | 'translate' | 'add') => {
     if (!sel || !selIdx) return;
-    setSheet({ kind, text: selText, sentence: sentenceAround(selIdx, sel.start, sel.end), at: packAt(sel.pg, sel.start) });
+    setSheet({ kind, text: selText, sentence: sentenceAround(selIdx, sel.start, sel.end), at: packAt(sel.pg, sel.start), sel });
     clearSel();
   };
 
@@ -383,13 +404,16 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
       return;
     }
     if (markup) return;
-    // Double tap: zoom in on that spot, or back to the page width.
+    // Double tap: zoom in on that spot, or back to the page width. Not on words: there iPhone's
+    // double tap selects the word, and zooming as well threw the page somewhere else.
     const now = performance.now();
     const l = lastTap.current;
+    const onWords = !!(e.target as HTMLElement).closest('.pdf-text span');
+    const selecting = !!window.getSelection()?.toString().trim();
     if (now - l.t < 320 && Math.hypot(e.clientX - l.x, e.clientY - l.y) < 30) {
       lastTap.current = { t: 0, x: 0, y: 0 };
       clearTimeout(chromeTimer.current);
-      dv.zoomTo(dv.zoom > 1.2 ? 1 : 2.5, e.clientX, e.clientY);
+      if (!onWords && !selecting) dv.zoomTo(dv.zoom > 1.2 ? 1 : 2.5, e.clientX, e.clientY);
       return;
     }
     lastTap.current = { t: now, x: e.clientX, y: e.clientY };
@@ -428,7 +452,81 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
 
   const bar = sel || hlSel;
   // Buttons stay visible while something needs them.
-  const showChrome = chrome || markup || !!bar;
+  // ——— Find in the magazine, like Find on Page in Safari ———
+
+  const [find, setFind] = useState<{ q: string; hits: Hit[]; at: number; busy: boolean } | null>(null);
+  const findRun = useRef(0);
+
+  /** Clears the mark on the match shown before. */
+  const unmark = () => dvRef.current?.slots.forEach((s) => s.overlay.querySelectorAll('.find-hit').forEach((i) => i.remove()));
+
+  /** Shows a match: scrolls it to the upper part of the screen and marks it until the next one. */
+  const showHit = async (hit: Hit) => {
+    const dv = dvRef.current;
+    const sc = scrollerRef.current;
+    if (!dv || !sc) return;
+    const idx = await dv.textOf(hit.pg);
+    const r = idx && rangeFor(idx, hit.start, hit.end);
+    const slot = dv.slots[hit.pg - 1];
+    if (!r || !slot) return dv.scrollToPage(hit.pg);
+    const rects = dv.rectsOf(hit.pg, r);
+    unmark();
+    if (rects[0]) sc.scrollTop = slot.top + rects[0][1] * slot.height - sc.clientHeight * 0.35;
+    for (const [x, y, w, h] of rects) {
+      const i = document.createElement('i');
+      i.className = 'find-hit';
+      i.style.cssText = `left:calc(${x * 100}% - 2px);top:calc(${y * 100}% - 1px);width:calc(${w * 100}% + 4px);height:calc(${h * 100}% + 2px)`;
+      slot.overlay.appendChild(i);
+    }
+  };
+
+  const goHit = (at: number) => {
+    if (!find?.hits.length) return;
+    const n = (at + find.hits.length) % find.hits.length;
+    setFind({ ...find, at: n });
+    void showHit(find.hits[n]);
+  };
+
+  // Searches every page once typing pauses; the first match on or after the page on screen is shown.
+  useEffect(() => {
+    const q = find?.q.trim().toLowerCase() ?? '';
+    const run = ++findRun.current;
+    if (!find || q.length < 2) {
+      if (find && (find.hits.length || find.busy)) setFind({ ...find, hits: [], at: 0, busy: false });
+      return;
+    }
+    const t = window.setTimeout(async () => {
+      const dv = dvRef.current;
+      const sc = scrollerRef.current;
+      if (!dv || !sc) return;
+      setFind((f) => f && { ...f, hits: [], at: 0, busy: true });
+      const here = dv.pageAt(sc.scrollTop + dv.col.offsetTop + 1);
+      const hits: Hit[] = [];
+      let shown = false;
+      for (let pg = 1; pg <= dv.slots.length; pg++) {
+        const text = (await dv.pageText(pg)).toLowerCase();
+        if (run !== findRun.current) return;
+        for (let i = text.indexOf(q); i >= 0; i = text.indexOf(q, i + q.length)) hits.push({ pg, start: i, end: i + q.length });
+        const first = hits.findIndex((h) => h.pg >= here);
+        if (!shown && first >= 0) {
+          shown = true;
+          void showHit(hits[first]);
+        }
+        if (pg % 8 === 0 || pg === dv.slots.length) setFind((f) => f && { ...f, hits: [...hits], at: Math.max(0, hits.findIndex((h) => h.pg >= here)) });
+      }
+      if (!shown && hits[0]) void showHit(hits[0]);
+      setFind((f) => f && { ...f, hits, at: Math.max(0, hits.findIndex((h) => h.pg >= here)), busy: false });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [find?.q]);
+
+  const closeFind = () => {
+    findRun.current++;
+    unmark();
+    setFind(null);
+  };
+
+  const showChrome = chrome || markup || !!bar || !!find;
 
   return (
     <div class={`reader doc-reader ${showChrome ? '' : 'chrome-hidden'}`} role="dialog" aria-label={`${issue.magazine}: ${mp.title}`}>
@@ -458,7 +556,42 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
 
       {/* Floating glass buttons over the page, as in Preview. */}
       <div class="glass-top">
-        {markup ? (
+        {find ? (
+          <>
+            <div class="glass find-bar" role="search">
+              <input
+                type="search"
+                value={find.q}
+                placeholder="Find in magazine"
+                aria-label="Find in magazine"
+                enterkeyhint="search"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck={false}
+                ref={(el) => {
+                  if (el && !find.q) el.focus();
+                }}
+                onInput={(e) => setFind({ ...find, q: e.currentTarget.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') goHit(find.at + (e.shiftKey ? -1 : 1));
+                  if (e.key === 'Escape') closeFind();
+                }}
+              />
+              <span class="find-count" aria-live="polite">
+                {find.q.trim().length < 2 ? '' : find.hits.length ? `${find.at + 1} of ${find.hits.length}${find.busy ? '…' : ''}` : find.busy ? '…' : 'Not found'}
+              </span>
+              <button type="button" class="find-step" aria-label="Previous match" disabled={!find.hits.length} onClick={() => goHit(find.at - 1)}>
+                <IconChevron size={14} style={{ transform: 'rotate(-90deg)' }} />
+              </button>
+              <button type="button" class="find-step" aria-label="Next match" disabled={!find.hits.length} onClick={() => goHit(find.at + 1)}>
+                <IconChevron size={14} style={{ transform: 'rotate(90deg)' }} />
+              </button>
+            </div>
+            <button type="button" class="glass glass-pill-btn" onClick={closeFind}>
+              Done
+            </button>
+          </>
+        ) : markup ? (
           <>
             <span class="glass-spacer" />
             <span class="glass glass-title">
@@ -637,6 +770,20 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
             </button>
           </div>
           <div class="list">
+            <button
+              type="button"
+              class="list-item"
+              onClick={() => {
+                setPanel(null);
+                setFind({ q: '', hits: [], at: 0, busy: false });
+              }}
+            >
+              <span class="list-item-main">
+                <b>Find in magazine</b>
+              </span>
+            </button>
+          </div>
+          <div class="list">
             <button type="button" class="list-item danger" onClick={() => setPanel('remove')}>
               <span class="list-item-main">
                 <b>Remove this magazine</b>
@@ -662,7 +809,9 @@ export function DocReader({ issueId, pageId, focus, at, onClose }: { issueId: st
 
       {sheet?.kind === 'lookup' && <LookupSheet text={sheet.text} sentence={sheet.sentence} onAdd={() => setSheet({ ...sheet, kind: 'add' })} onClose={() => setSheet(null)} />}
       {sheet?.kind === 'translate' && <TranslateSheet text={sheet.text} sentence={sheet.sentence} onAdd={() => setSheet({ ...sheet, kind: 'add' })} onClose={() => setSheet(null)} />}
-      {sheet?.kind === 'add' && <AddWordSheet text={sheet.text} sentence={sheet.sentence} issue={issueId} page={mp.id} at={sheet.at} onClose={() => setSheet(null)} />}
+      {sheet?.kind === 'add' && (
+        <AddWordSheet text={sheet.text} sentence={sheet.sentence} issue={issueId} page={mp.id} at={sheet.at} onSaved={() => markSaved(sheet.sel)} onClose={() => setSheet(null)} />
+      )}
       {sheet?.kind === 'text' && (
         <TextNoteSheet
           note={sheet.note}

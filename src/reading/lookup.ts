@@ -82,16 +82,57 @@ export function define(word: string): Promise<Definition | null> {
   });
 }
 
-/** English → Russian machine translation for a word or a sentence. */
-export function translate(text: string): Promise<string> {
+export interface TranslatorReply {
+  responseData?: { translatedText?: string };
+  matches?: { translation?: string; 'created-by'?: string; match?: number }[];
+}
+
+const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+
+/**
+ * Russian for a word or a short phrase, best first, from the translator's reply. Its "best" for
+ * single words is often a stray memory entry ("tangy" → «Вкус», a Wikipedia title; "rind" left
+ * untranslated), while its machine translation is right; so machine translation goes first, then
+ * the other entries that are Russian and short, without repeats.
+ */
+export function pickTranslations(query: string, reply: TranslatorReply): string[] {
+  const best = reply.responseData?.translatedText ?? '';
+  const matches = reply.matches ?? [];
+  const machine = matches.filter((m) => m['created-by'] === 'MT!').map((m) => m.translation ?? '');
+  const others = matches.filter((m) => m['created-by'] !== 'MT!').map((m) => m.translation ?? '');
+  const lower = /^[a-z]/.test(query.trim());
+  const out: string[] = [];
+  for (const raw of [...machine, best, ...others]) {
+    // A piece of a sentence ("Свежий, терпкий, смелый.") is not a translation of the word.
+    const sentenceLike = (/[,.!]/.test(raw.trim()) && !/[,.!]/.test(query)) || words(raw) > Math.max(4, words(query) + 2);
+    let t = raw.trim();
+    if (!/[а-яё]/i.test(t) || t.includes('?') || sentenceLike) continue;
+    // "Шишка" for "pine cone": a lower-case word gets a lower-case translation.
+    if (lower && /^[А-ЯЁ][а-яё]/.test(t)) t = t[0].toLowerCase() + t.slice(1);
+    if (!out.some((o) => o.toLowerCase() === t.toLowerCase())) out.push(t);
+  }
+  return out.slice(0, 3);
+}
+
+/** Whether a text is a word or a short phrase (not a sentence): those get several translations. */
+const isShort = (text: string) => words(text) <= 3 && !/[.!?]/.test(text.trim());
+
+/**
+ * English → Russian machine translation. A sentence gets one translation; a word or a short
+ * phrase gets up to three, the likeliest first, so the learner can pick the right one.
+ */
+export function translations(text: string): Promise<string[]> {
   return cached(`tr:${text}`, async () => {
     const res = await fetch(`https://api.mymemory.translated.net/get?langpair=en|ru&q=${encodeURIComponent(text.slice(0, 480))}`);
     if (!res.ok) throw new Error('translate failed');
-    const json = (await res.json()) as { responseData?: { translatedText?: string } };
-    const out = json.responseData?.translatedText?.trim();
-    if (!out) throw new Error('translate failed');
+    const json = (await res.json()) as TranslatorReply;
+    const out = isShort(text) ? pickTranslations(text, json) : [json.responseData?.translatedText?.trim() ?? ''].filter(Boolean);
+    if (!out.length) throw new Error('translate failed');
     return out;
   });
 }
+
+/** The likeliest translation of a word, a phrase or a sentence. */
+export const translate = (text: string): Promise<string> => translations(text).then((t) => t[0]);
 
 export const googleTranslateUrl = (text: string) => `https://translate.google.com/?sl=en&tl=ru&text=${encodeURIComponent(text)}`;

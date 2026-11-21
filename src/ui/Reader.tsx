@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { saveCustomWord, WORDS_FULL } from '../engine/store';
 import { createCustomWord, sameWord } from '../engine/words';
-import { define, findKnown, googleTranslateUrl, lemmaCandidates, translate, type Definition } from '../reading/lookup';
+import { define, findKnown, googleTranslateUrl, lemmaCandidates, translations, type Definition } from '../reading/lookup';
 import { getIssue, getReading, markRead, notesOf, setLast, subscribeReading, updateNotes } from '../reading/store';
 import { boxesFor, indexText, offsetAt, sentenceAround, wordAt, type Box, type TextIndex } from '../reading/text';
 import { PAGE_WIDTH, type Highlight, type HighlightColor, type PageNotes, type Stroke, type TextNote, type Tool } from '../reading/types';
@@ -1004,19 +1004,26 @@ export function LookupSheet({ text, sentence, onAdd, onClose }: { text: string; 
   );
 }
 
-function useTranslation(text: string) {
-  const [out, setOut] = useState<string | null | undefined>(undefined);
+/** Translations of a text, likeliest first: undefined while loading, null when there are none. */
+function useTranslations(text: string) {
+  const [out, setOut] = useState<string[] | null | undefined>(undefined);
   useEffect(() => {
     if (!text) return setOut(null);
-    translate(text).then(setOut, () => setOut(null));
+    translations(text).then(setOut, () => setOut(null));
   }, [text]);
   return out;
+}
+
+function useTranslation(text: string) {
+  const all = useTranslations(text);
+  return all === undefined ? undefined : (all?.[0] ?? null);
 }
 
 export function TranslateSheet({ text, sentence, onAdd, onClose }: { text: string; sentence: string; onAdd: () => void; onClose: () => void }) {
   const d = useData();
   const known = findKnown(text, d.custom);
-  const word = useTranslation(known ? '' : text);
+  const options = useTranslations(known ? '' : text);
+  const word = options === undefined ? undefined : (options?.[0] ?? null);
   const whole = useTranslation(sentence);
   return (
     <Modal title="Translate" onClose={onClose}>
@@ -1032,6 +1039,11 @@ export function TranslateSheet({ text, sentence, onAdd, onClose }: { text: strin
         <p class="translation" lang="ru">
           {known ? known.ru : word === undefined ? '…' : word ?? 'No connection to the translator.'}
         </p>
+        {!known && options && options.length > 1 && (
+          <p class="muted small" lang="ru">
+            Also: {options.slice(1).join(' · ')}
+          </p>
+        )}
       </div>
       <div class="sheet stack-sm">
         <p class="eyebrow">Sentence</p>
@@ -1050,7 +1062,7 @@ export function TranslateSheet({ text, sentence, onAdd, onClose }: { text: strin
   );
 }
 
-export function AddWordSheet({ text, sentence, issue, page, at, onClose }: { text: string; sentence: string; issue: string; page: string; at: number; onClose: () => void }) {
+export function AddWordSheet({ text, sentence, issue, page, at, onClose, onSaved }: { text: string; sentence: string; issue: string; page: string; at: number; onClose: () => void; onSaved?: () => void }) {
   const d = useData();
   const known = findKnown(text, d.custom);
   const isPhrase = /\s/.test(text.trim());
@@ -1063,7 +1075,8 @@ export function AddWordSheet({ text, sentence, issue, page, at, onClose }: { tex
   const [exRu, setExRu] = useState('');
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
-  const auto = useTranslation(known ? '' : text);
+  const options = useTranslations(known ? '' : text);
+  const auto = options === undefined ? undefined : (options?.[0] ?? null);
   const autoSentence = useTranslation(sentence);
   useEffect(() => {
     if (auto && !ru) setRu(auto.toLowerCase());
@@ -1085,6 +1098,7 @@ export function AddWordSheet({ text, sentence, issue, page, at, onClose }: { tex
       const w = createCustomWord({ en, ru, ex: sentence, exRu, level: null });
       if (!saveCustomWord({ ...w, ctx: [ctx] })) return setError(WORDS_FULL);
     }
+    onSaved?.();
     setSaved(true);
     setTimeout(onClose, 700);
   };
@@ -1100,6 +1114,16 @@ export function AddWordSheet({ text, sentence, issue, page, at, onClose }: { tex
         <div class="field">
           <label for="r-ru">Translation</label>
           <input id="r-ru" value={ru} onInput={(e) => setRu(e.currentTarget.value)} autocomplete="off" placeholder={auto === undefined && !known ? 'Translating…' : ''} />
+          {!known && options && options.length > 1 && (
+            // The translator isn't always right about a single word: its other guesses are a tap away.
+            <div class="ru-options" role="group" aria-label="Other translations">
+              {options.map((o) => (
+                <button type="button" key={o} class="ru-option" aria-pressed={ru.trim().toLowerCase() === o.toLowerCase()} onClick={() => setRu(o.toLowerCase())} lang="ru">
+                  {o}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div class="sheet stack-sm">
           <p class="eyebrow">Sentence it came from</p>

@@ -221,6 +221,26 @@ export class DocView {
     return s.textPromise;
   }
 
+  private texts = new Map<number, Promise<string>>();
+
+  /**
+   * A page's text for searching, exactly as its text layer will hold it (each line as pdf.js
+   * gives it, a space at line ends), so a match's offsets work with the page's TextIndex.
+   */
+  pageText(pg: number): Promise<string> {
+    const s = this.slots[pg - 1];
+    if (!s) return Promise.resolve('');
+    let p = this.texts.get(pg);
+    if (!p) {
+      p = s.page
+        .getTextContent()
+        .then((c) => c.items.map((i) => ('str' in i ? i.str + (i.hasEOL ? ' ' : '') : '')).join(''))
+        .catch(() => '');
+      this.texts.set(pg, p);
+    }
+    return p;
+  }
+
   textOf(pg: number): Promise<TextIndex | null> {
     const s = this.slots[pg - 1];
     if (!s) return Promise.resolve(null);

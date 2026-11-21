@@ -60,8 +60,14 @@ function save(next: ReadingData) {
   for (const fn of listeners) fn();
 }
 
+/**
+ * No notes yet: always the same (frozen) object, so a page without notes doesn't look changed on
+ * every render, which made the reader redraw the notes layer of every page each time.
+ */
+const NO_NOTES: PageNotes = Object.freeze({ hl: [], strokes: [], texts: [] }) as PageNotes;
+
 export function notesOf(issue: string, page: string): PageNotes {
-  return data.pages[pageKey(issue, page)] ?? { hl: [], strokes: [], texts: [] };
+  return data.pages[pageKey(issue, page)] ?? NO_NOTES;
 }
 
 export function updateNotes(issue: string, page: string, patch: Partial<PageNotes>) {
